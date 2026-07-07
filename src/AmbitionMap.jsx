@@ -1,7 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 const IBM_FONT = `
   @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;600&display=swap');
+
+  @keyframes toastSlideDown {
+    from { opacity: 0; transform: translate(-50%, -16px); }
+    to { opacity: 1; transform: translate(-50%, 0); }
+  }
 `;
 
 const COLORS = {
@@ -27,12 +32,12 @@ const roles = [
     goal: "أحفظ جزءين جديدين وأُلقي محاضرة توعوية واحدة على الأقل",
   },
   {
-    name: "الخطيب / الزوج القادم",
+    name: "متعلّم الإنجليزي",
     type: "أساسي",
     color: COLORS.purple,
     bg: COLORS.lightPurple,
-    mpl: "أتواصل مع خطيبتي يومياً، وأُخطط للزواج بخطوة عملية كل أسبوع",
-    goal: "أُكمل الزواج وأُؤمّن بيتاً مستقراً وميزانية واضحة للسنة الأولى",
+    mpl: "أتعلّم الإنجليزي ٣٠ دقيقة يومياً",
+    goal: "أصل لمستوى محادثة بطلاقة",
   },
   {
     name: "الابن البار",
@@ -41,14 +46,6 @@ const roles = [
     bg: COLORS.lightTeal,
     mpl: "أزور والديّ أو أتصل بهم ٣ مرات أسبوعياً على الأقل",
     goal: "أُخصص مبلغاً ثابتاً شهرياً لوالديّ من دخلي",
-  },
-  {
-    name: "الأخ الداعم",
-    type: "أساسي",
-    color: COLORS.primary,
-    bg: COLORS.lightTeal,
-    mpl: "أكون متاحاً لأخي وأختي عند الحاجة، وأسألهم عن أحوالهم أسبوعياً",
-    goal: "أُساعد أحد أفراد عائلتي في هدف محدد خلال ٢٠٢٦",
   },
   {
     name: "مدير تأسيس وتشغيل",
@@ -89,12 +86,10 @@ const dailyTasks = [
   { id: "d2", text: "مراجعة حفظ القرآن ١٥ دقيقة", period: "daily" },
   { id: "d3", text: "متابعة مهام تأسيس العلامة التجارية", period: "daily" },
   { id: "d4", text: "٣٠ دقيقة تعلم (تسويق / إدارة / تجارة إلكترونية)", period: "daily" },
-  { id: "d5", text: "التواصل مع خطيبتي", period: "daily" },
+  { id: "d5", text: "٣٠ دقيقة تعلّم إنجليزي", period: "daily" },
   { id: "w1", text: "زيارة أو اتصال بالوالدين", period: "weekly" },
   { id: "w2", text: "مراجعة مؤشرات العلامة التجارية", period: "weekly" },
   { id: "w3", text: "تطبيق درس من الكورس على مشروع حقيقي", period: "weekly" },
-  { id: "w4", text: "التواصل مع الأخ والأخت والاطمئنان عليهم", period: "weekly" },
-  { id: "w5", text: "خطوة عملية نحو التحضير للزواج", period: "weekly" },
   { id: "m1", text: "تخصيص الصدقة الشهرية ومساعدة محتاج", period: "monthly" },
   { id: "m2", text: "تقييم التقدم نحو الأهداف المهنية", period: "monthly" },
   { id: "m3", text: "مراجعة الميزانية الشخصية والادخار", period: "monthly" },
@@ -111,19 +106,40 @@ function getArabicDate() {
   });
 }
 
+const TOAST_MESSAGES = ["كفو! 🔥", "استمر يا وحش 🚀", "ماشاء الله 🌟"];
+
+function getMotivationMessage(pct) {
+  if (pct >= 100) return "كفو أنجزت كل شي 🏆";
+  if (pct >= 90) return "قربت تخلّص 🚀";
+  if (pct >= 60) return "نص الطريق 👏";
+  if (pct >= 30) return "بداية موفقة كمّل يا وحش 🔥";
+  return "يلا نبدأ";
+}
+
 export default function AmbitionMap() {
   const [activeTab, setActiveTab] = useState(0);
   const [checked, setChecked] = useState({});
+  const [toast, setToast] = useState(null);
+  const toastTimer = useRef(null);
 
   useEffect(() => {
     const saved = localStorage.getItem("ambition_checks");
     if (saved) setChecked(JSON.parse(saved));
   }, []);
 
+  const showToast = () => {
+    const msg = TOAST_MESSAGES[Math.floor(Math.random() * TOAST_MESSAGES.length)];
+    setToast(msg);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 2200);
+  };
+
   const toggleCheck = (id) => {
+    const isCompleting = !checked[id];
     const updated = { ...checked, [id]: !checked[id] };
     setChecked(updated);
     try { localStorage.setItem("ambition_checks", JSON.stringify(updated)); } catch {}
+    if (isCompleting) showToast();
   };
 
   const resetAll = () => {
@@ -142,6 +158,28 @@ export default function AmbitionMap() {
   return (
     <div style={{ fontFamily: "'IBM Plex Sans Arabic', sans-serif", background: COLORS.bg, minHeight: "100vh", direction: "rtl", color: COLORS.text }}>
       <style>{IBM_FONT}</style>
+
+      {/* Toast */}
+      {toast && (
+        <div style={{
+          position: "fixed",
+          top: 16,
+          left: "50%",
+          transform: "translateX(-50%)",
+          background: COLORS.text,
+          color: "#fff",
+          padding: "10px 20px",
+          borderRadius: 20,
+          fontSize: 14,
+          fontWeight: 600,
+          boxShadow: "0 4px 16px rgba(0,0,0,0.25)",
+          zIndex: 1000,
+          animation: "toastSlideDown 0.25s ease",
+          whiteSpace: "nowrap",
+        }}>
+          {toast}
+        </div>
+      )}
 
       {/* Header */}
       <div style={{ background: COLORS.primary, padding: "24px 20px 0", color: "#fff" }}>
@@ -255,6 +293,29 @@ export default function AmbitionMap() {
             <div style={{ textAlign: "center", padding: "12px", background: COLORS.lightTeal, borderRadius: 20 }}>
               <p style={{ margin: 0, fontSize: 13, color: COLORS.primary, fontWeight: 600 }}>{getArabicDate()}</p>
             </div>
+
+            {/* مؤشر تقدّمك اليوم */}
+            {(() => {
+              const todayProg = getProgress("daily");
+              return (
+                <div style={{ background: COLORS.primary, borderRadius: 32, padding: "20px", color: "#fff" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                    <p style={{ margin: 0, fontSize: 14, fontWeight: 600, opacity: 0.9 }}>مؤشر تقدّمك اليوم</p>
+                    <span style={{ fontSize: 20, fontWeight: 600 }}>{todayProg.pct}%</span>
+                  </div>
+                  <div style={{ background: "rgba(255,255,255,0.25)", borderRadius: 8, height: 8, marginBottom: 12, overflow: "hidden" }}>
+                    <div style={{
+                      height: "100%",
+                      background: "#fff",
+                      borderRadius: 8,
+                      width: `${todayProg.pct}%`,
+                      transition: "width 0.3s ease",
+                    }} />
+                  </div>
+                  <p style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>{getMotivationMessage(todayProg.pct)}</p>
+                </div>
+              );
+            })()}
 
             {[
               { label: "اليومي", key: "daily", icon: "☀️" },
