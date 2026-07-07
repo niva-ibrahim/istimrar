@@ -1,7 +1,27 @@
 import { useState, useEffect, useRef } from "react";
 
-const IBM_FONT = `
-  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;600&display=swap');
+// مسار الأصول يتبع base في vite.config.js (مثال: "/istimrar/")
+const ASSET_BASE = import.meta.env.BASE_URL;
+
+// خط ثمانية أساسي مع Noto Naskh Arabic كبديل مقارب يعمل فوراً.
+// ضع ملفات .otf الأصلية في public/fonts/ (انظر public/fonts/README.md).
+const FONT_STYLE = `
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;500;600;700&display=swap');
+
+  @font-face {
+    font-family: 'Thmanyah';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('${ASSET_BASE}fonts/Thmanyah-Regular.otf') format('opentype');
+  }
+  @font-face {
+    font-family: 'Thmanyah';
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url('${ASSET_BASE}fonts/Thmanyah-Bold.otf') format('opentype');
+  }
 
   @keyframes toastSlideDown {
     from { opacity: 0; transform: translate(-50%, -16px); }
@@ -9,17 +29,21 @@ const IBM_FONT = `
   }
 `;
 
+const FONT_STACK = "'Thmanyah', 'Noto Naskh Arabic', sans-serif";
+
+// القيم مربوطة بمتغيّرات tokens.css؛ الاحتياطي يبقي الشكل الحالي
+// إلى أن يُستبدل tokens.css بالنسخة الرسمية من design_handoff_brand_identity.
 const COLORS = {
-  bg: "#FAFAFA",
-  text: "#121717",
-  primary: "#007F7D",
-  action: "#FFCC00",
-  purple: "#8338EC",
-  card: "#FFFFFF",
-  border: "#E8ECEC",
-  lightTeal: "#E6F4F4",
-  lightPurple: "#F0E8FD",
-  lightYellow: "#FFF9E0",
+  bg: "var(--color-bg, #FAFAFA)",
+  text: "var(--color-text, #121717)",
+  primary: "var(--color-primary, #007F7D)",
+  action: "var(--color-action, #FFCC00)",
+  purple: "var(--color-purple, #8338EC)",
+  card: "var(--color-card, #FFFFFF)",
+  border: "var(--color-border, #E8ECEC)",
+  lightTeal: "var(--color-light-teal, #E6F4F4)",
+  lightPurple: "var(--color-light-purple, #F0E8FD)",
+  lightYellow: "var(--color-light-yellow, #FFF9E0)",
 };
 
 const roles = [
@@ -156,8 +180,8 @@ export default function AmbitionMap() {
   const tabs = ["الحلم الجريء", "أدواري", "قائمتي اليومية"];
 
   return (
-    <div style={{ fontFamily: "'IBM Plex Sans Arabic', sans-serif", background: COLORS.bg, minHeight: "100vh", direction: "rtl", color: COLORS.text }}>
-      <style>{IBM_FONT}</style>
+    <div style={{ fontFamily: FONT_STACK, background: COLORS.bg, minHeight: "100vh", direction: "rtl", color: COLORS.text }}>
+      <style>{FONT_STYLE}</style>
 
       {/* Toast */}
       {toast && (
@@ -201,7 +225,7 @@ export default function AmbitionMap() {
                 borderRadius: "12px 12px 0 0",
                 background: activeTab === i ? COLORS.bg : "rgba(255,255,255,0.15)",
                 color: activeTab === i ? COLORS.primary : "#fff",
-                fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+                fontFamily: FONT_STACK,
                 fontWeight: activeTab === i ? 600 : 400,
                 fontSize: 13,
                 cursor: "pointer",
@@ -395,7 +419,7 @@ export default function AmbitionMap() {
                 borderRadius: 24,
                 padding: "14px",
                 width: "100%",
-                fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+                fontFamily: FONT_STACK,
                 fontSize: 15,
                 fontWeight: 600,
                 color: COLORS.text,

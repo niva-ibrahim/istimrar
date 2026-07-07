@@ -1,0 +1,20 @@
+/* =========================================================
+   tokens.css — رموز الهوية البصرية (Design Tokens)
+   ---------------------------------------------------------
+   هذه قيم مبدئية مستخرجة من التصميم الحالي كي يبقى الشكل
+   ثابتاً. استبدل هذا الملف بنسخة tokens.css الرسمية من
+   مجلد design_handoff_brand_identity متى ما توفّرت، وسيُعاد
+   تلوين الواجهة كاملةً تلقائياً لأنها تقرأ من هذه المتغيّرات.
+   ========================================================= */
+:root {
+  --color-bg: #FAFAFA;
+  --color-text: #121717;
+  --color-primary: #007F7D;
+  --color-action: #FFCC00;
+  --color-purple: #8338EC;
+  --color-card: #FFFFFF;
+  --color-border: #E8ECEC;
+  --color-light-teal: #E6F4F4;
+  --color-light-purple: #F0E8FD;
+  --color-light-yellow: #FFF9E0;
+}
