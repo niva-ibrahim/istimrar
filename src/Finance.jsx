@@ -9,7 +9,10 @@ import {
   fmt,
   parseNum,
   todayKey,
+  monthKey,
   sumAmounts,
+  rolloverIfNeeded,
+  balanceStatus,
   loadFinance,
   saveFinance,
 } from "./finance";
@@ -39,14 +42,9 @@ export function useFinance() {
     saveFinance(state);
   }, [state]);
 
-  // إعادة فحص التصفير اليومي عند عودة التركيز أو كل دقيقة
+  // أرشفة اليوم المنصرم + التصفير عند عودة التركيز أو كل دقيقة
   useEffect(() => {
-    const check = () =>
-      setState((s) =>
-        s.lastReset !== todayKey()
-          ? { ...s, dailyExpenses: [], lastReset: todayKey() }
-          : s
-      );
+    const check = () => setState((s) => rolloverIfNeeded(s));
     const id = setInterval(check, 60 * 1000);
     window.addEventListener("focus", check);
     return () => {
@@ -60,6 +58,23 @@ export function useFinance() {
   const remainingToday = round2(FINANCE.dailyLimit - todayExpense);
   const emergencyTotal = sumAmounts(state.emergencyExpenses);
   const availableBalance = round2(steps.baseAvailable - emergencyTotal);
+  const status = balanceStatus(availableBalance);
+
+  // ملخص الشهر الحالي (تراكمي)
+  const month = monthKey();
+  const dayMap = {};
+  (state.history || []).forEach((h) => {
+    if (h.date && monthKey(h.date) === month) dayMap[h.date] = round2((dayMap[h.date] || 0) + h.total);
+  });
+  if (todayExpense > 0) dayMap[todayKey()] = round2((dayMap[todayKey()] || 0) + todayExpense);
+  const monthDays = Object.entries(dayMap)
+    .map(([date, total]) => ({ date, total }))
+    .sort((a, b) => (a.date < b.date ? 1 : -1));
+  const monthlyDailyTotal = round2(monthDays.reduce((s, d) => s + d.total, 0));
+  const monthlyEmergencyTotal = sumAmounts(
+    (state.emergencyExpenses || []).filter((e) => monthKey(e.date) === month)
+  );
+  const monthlyTotal = round2(monthlyDailyTotal + monthlyEmergencyTotal);
 
   const addDaily = (amount) =>
     setState((s) => ({
@@ -94,16 +109,20 @@ export function useFinance() {
     _exportedAt: new Date().toISOString(),
     dailyExpenses: state.dailyExpenses,
     emergencyExpenses: state.emergencyExpenses,
+    history: state.history || [],
     lastReset: state.lastReset,
   });
   const importState = (obj) => {
     if (!obj || typeof obj !== "object") return false;
     if (!Array.isArray(obj.dailyExpenses) && !Array.isArray(obj.emergencyExpenses)) return false;
-    setState({
-      dailyExpenses: Array.isArray(obj.dailyExpenses) ? obj.dailyExpenses : [],
-      emergencyExpenses: Array.isArray(obj.emergencyExpenses) ? obj.emergencyExpenses : [],
-      lastReset: obj.lastReset || todayKey(),
-    });
+    setState(
+      rolloverIfNeeded({
+        dailyExpenses: Array.isArray(obj.dailyExpenses) ? obj.dailyExpenses : [],
+        emergencyExpenses: Array.isArray(obj.emergencyExpenses) ? obj.emergencyExpenses : [],
+        history: Array.isArray(obj.history) ? obj.history : [],
+        lastReset: obj.lastReset || todayKey(),
+      })
+    );
     return true;
   };
 
@@ -114,6 +133,11 @@ export function useFinance() {
     remainingToday,
     emergencyTotal,
     availableBalance,
+    status,
+    monthDays,
+    monthlyDailyTotal,
+    monthlyEmergencyTotal,
+    monthlyTotal,
     dailyExpenses: state.dailyExpenses,
     emergencyExpenses: state.emergencyExpenses,
     addDaily,
@@ -128,8 +152,9 @@ export function useFinance() {
 
 // ============ Widget الشاشة الرئيسية ============
 export function FinanceWidget({ finance, onOpen }) {
-  const { availableBalance, todayExpense, dailyLimit } = finance;
+  const { availableBalance, todayExpense, dailyLimit, status } = finance;
   const pct = Math.min(100, Math.round((todayExpense / dailyLimit) * 100));
+  const balanceColor = status.level === "empty" ? FIN.danger : status.level === "low" ? FIN.warning : FIN.success;
   return (
     <div
       onClick={onOpen}
@@ -154,9 +179,12 @@ export function FinanceWidget({ finance, onOpen }) {
 
       <div>
         <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 4 }}>الرصيد المتاح للادخار</div>
-        <div style={{ fontSize: 30, fontWeight: 800, color: FIN.success, lineHeight: 1 }}>
+        <div style={{ fontSize: 30, fontWeight: 800, color: balanceColor, lineHeight: 1 }}>
           {fmt(availableBalance)} <span style={{ fontSize: 15, fontWeight: 600 }}>ر.س</span>
         </div>
+        {status.level !== "ok" && (
+          <div style={{ marginTop: 8, fontSize: 12, fontWeight: 700, color: balanceColor }}>⚠️ {status.text}</div>
+        )}
       </div>
 
       <div>
@@ -232,9 +260,19 @@ function SectionTitle({ children }) {
   return <h2 style={{ margin: "0 0 16px", fontSize: 17, fontWeight: 800, color: C.text }}>{children}</h2>;
 }
 
+function MiniStat({ label, value, color }) {
+  return (
+    <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 14, padding: "12px 10px", textAlign: "center" }}>
+      <div style={{ fontSize: 11, color: C.textMuted, marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 16, fontWeight: 800, color }}>{fmt(value)}</div>
+      <div style={{ fontSize: 10, color: C.textMuted }}>ر.س</div>
+    </div>
+  );
+}
+
 // ============ صفحة النظام المالي الكاملة ============
 export function FinancePage({ finance, onBack, logo }) {
-  const { steps, dailyLimit, todayExpense, remainingToday, availableBalance, dailyExpenses, emergencyExpenses, addDaily, resetDaily, addEmergency, removeEmergency, removeDaily, exportState, importState } = finance;
+  const { steps, dailyLimit, todayExpense, remainingToday, availableBalance, status, monthDays, monthlyDailyTotal, monthlyEmergencyTotal, monthlyTotal, dailyExpenses, emergencyExpenses, addDaily, resetDaily, addEmergency, removeEmergency, removeDaily, exportState, importState } = finance;
 
   const [dailyInput, setDailyInput] = useState("");
   const [emAmount, setEmAmount] = useState("");
@@ -245,6 +283,7 @@ export function FinancePage({ finance, onBack, logo }) {
   const [toast, setToast] = useState(null);
   const toastTimer = useRef(null);
   const fileRef = useRef(null);
+  const balanceColor = status.level === "empty" ? FIN.danger : status.level === "low" ? FIN.warning : FIN.success;
 
   const showToast = (text) => {
     setToast(text);
@@ -351,11 +390,22 @@ export function FinancePage({ finance, onBack, logo }) {
         <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: C.text }}>💰 نظام المالية</h1>
       </div>
 
+      {/* تنبيه ذكي عند قرب نفاد الرصيد */}
+      {status.level !== "ok" && (() => {
+        const col = status.level === "empty" ? FIN.danger : FIN.warning;
+        return (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, background: `${col}1A`, border: `1px solid ${col}55`, borderRadius: 16, padding: "14px 16px" }}>
+            <span style={{ fontSize: 20 }}>⚠️</span>
+            <span style={{ fontSize: 14, fontWeight: 700, color: col }}>{status.text}</span>
+          </div>
+        );
+      })()}
+
       {/* ملخص علوي */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <div style={{ ...sectionCard, padding: "16px 16px" }}>
           <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 6 }}>الرصيد المتاح</div>
-          <div style={{ fontSize: 22, fontWeight: 800, color: FIN.success }}>{fmt(availableBalance)}</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: balanceColor }}>{fmt(availableBalance)}</div>
           <div style={{ fontSize: 12, color: C.textMuted }}>ر.س</div>
         </div>
         <div style={{ ...sectionCard, padding: "16px 16px" }}>
@@ -417,6 +467,39 @@ export function FinancePage({ finance, onBack, logo }) {
                 <button onClick={() => removeDaily(e.ts)} aria-label="حذف" style={{ background: "transparent", border: "none", color: C.textMuted, cursor: "pointer", fontSize: 16, lineHeight: 1 }}>✕</button>
               </div>
             ))}
+          </div>
+        )}
+      </div>
+
+      {/* ملخص الشهر التراكمي */}
+      <div style={sectionCard}>
+        <SectionTitle>📈 ملخص هذا الشهر</SectionTitle>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: monthDays.length ? 18 : 0 }}>
+          <MiniStat label="مصروف يومي" value={monthlyDailyTotal} color={FIN.info} />
+          <MiniStat label="طوارئ" value={monthlyEmergencyTotal} color={FIN.warning} />
+          <MiniStat label="الإجمالي" value={monthlyTotal} color={C.primary} />
+        </div>
+        {monthDays.length === 0 ? (
+          <p style={{ margin: 0, fontSize: 13, color: C.textMuted }}>لا توجد مصروفات مسجّلة هذا الشهر بعد.</p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ fontSize: 12, color: C.textMuted, fontWeight: 700 }}>المصروف اليومي يوماً بيوم</div>
+            {monthDays.map((d) => {
+              const over = d.total > dailyLimit;
+              const w = Math.min(100, Math.round((d.total / dailyLimit) * 100));
+              const isToday = d.date === todayKey();
+              return (
+                <div key={d.date} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12 }}>
+                  <span style={{ color: isToday ? C.primary : C.textMuted, width: 78, flexShrink: 0 }}>
+                    {d.date.slice(5)}{isToday ? " • اليوم" : ""}
+                  </span>
+                  <div style={{ flex: 1, background: "rgba(255,255,255,0.06)", borderRadius: 999, height: 7, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${w}%`, background: over ? FIN.danger : FIN.info, borderRadius: 999 }} />
+                  </div>
+                  <span style={{ color: over ? FIN.danger : C.textSoft, fontWeight: 700, width: 62, textAlign: "left", flexShrink: 0 }}>{fmt(d.total)}</span>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

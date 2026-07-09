@@ -72,6 +72,34 @@ export function sumAmounts(list) {
   return round2((list || []).reduce((s, e) => s + (Number(e.amount) || 0), 0));
 }
 
+// مفتاح الشهر الحالي (YYYY-MM)
+export function monthKey(dateStr) {
+  return (dateStr || todayKey()).slice(0, 7);
+}
+
+// عند تغيّر اليوم: نؤرشف إجمالي مصروف اليوم المنصرم في السجل الشهري ثم نصفّر
+export function rolloverIfNeeded(data) {
+  const today = todayKey();
+  if (data.lastReset === today) return data;
+  const prevTotal = sumAmounts(data.dailyExpenses);
+  const history = Array.isArray(data.history) ? data.history.slice() : [];
+  if (prevTotal > 0 && data.lastReset) {
+    history.push({ date: data.lastReset, total: prevTotal });
+  }
+  return { ...data, history, dailyExpenses: [], lastReset: today };
+}
+
+// حد التنبيه لقرب نفاد الرصيد المتاح (قابل للتعديل)
+export const LOW_BALANCE_THRESHOLD = 500;
+
+export function balanceStatus(available) {
+  if (available <= 0)
+    return { level: "empty", text: "نفد الرصيد المتاح! يُفضّل عدم إضافة مصروفات طارئة جديدة." };
+  if (available <= LOW_BALANCE_THRESHOLD)
+    return { level: "low", text: `تنبيه: رصيدك المتاح أوشك على النفاد — ${fmt(available)} ر.س فقط.` };
+  return { level: "ok", text: "" };
+}
+
 const KEY = "istimrar_finance";
 
 export function loadFinance() {
@@ -82,16 +110,13 @@ export function loadFinance() {
     data = null;
   }
   if (!data || typeof data !== "object") {
-    data = { dailyExpenses: [], emergencyExpenses: [], lastReset: todayKey() };
+    data = { dailyExpenses: [], emergencyExpenses: [], history: [], lastReset: todayKey() };
   }
   data.dailyExpenses = data.dailyExpenses || [];
   data.emergencyExpenses = data.emergencyExpenses || [];
-  // تصفير المصروف اليومي تلقائياً مع اليوم الجديد
-  if (data.lastReset !== todayKey()) {
-    data.dailyExpenses = [];
-    data.lastReset = todayKey();
-  }
-  return data;
+  data.history = data.history || [];
+  // أرشفة اليوم المنصرم + تصفير المصروف اليومي تلقائياً مع اليوم الجديد
+  return rolloverIfNeeded(data);
 }
 
 export function saveFinance(data) {
