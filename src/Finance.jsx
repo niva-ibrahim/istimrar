@@ -21,6 +21,15 @@ function barColor(pct) {
   return FIN.danger;
 }
 
+function fmtTime(ts) {
+  if (!ts) return "";
+  try {
+    return new Date(ts).toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return "";
+  }
+}
+
 // خطّاف مشترك: حالة المالية + الاشتقاقات + العمليات (يُرفع لأعلى ليتشارك
 // الـ widget والصفحة نفس البيانات لحظياً).
 export function useFinance() {
@@ -72,6 +81,31 @@ export function useFinance() {
       ...s,
       emergencyExpenses: s.emergencyExpenses.filter((e) => e.ts !== ts),
     }));
+  const removeDaily = (ts) =>
+    setState((s) => ({
+      ...s,
+      dailyExpenses: s.dailyExpenses.filter((e) => e.ts !== ts),
+    }));
+
+  // نسخة احتياطية للتصدير/الاستيراد
+  const exportState = () => ({
+    _app: "istimrar-finance",
+    _version: 1,
+    _exportedAt: new Date().toISOString(),
+    dailyExpenses: state.dailyExpenses,
+    emergencyExpenses: state.emergencyExpenses,
+    lastReset: state.lastReset,
+  });
+  const importState = (obj) => {
+    if (!obj || typeof obj !== "object") return false;
+    if (!Array.isArray(obj.dailyExpenses) && !Array.isArray(obj.emergencyExpenses)) return false;
+    setState({
+      dailyExpenses: Array.isArray(obj.dailyExpenses) ? obj.dailyExpenses : [],
+      emergencyExpenses: Array.isArray(obj.emergencyExpenses) ? obj.emergencyExpenses : [],
+      lastReset: obj.lastReset || todayKey(),
+    });
+    return true;
+  };
 
   return {
     steps,
@@ -80,11 +114,15 @@ export function useFinance() {
     remainingToday,
     emergencyTotal,
     availableBalance,
+    dailyExpenses: state.dailyExpenses,
     emergencyExpenses: state.emergencyExpenses,
     addDaily,
     resetDaily,
     addEmergency,
     removeEmergency,
+    removeDaily,
+    exportState,
+    importState,
   };
 }
 
@@ -196,15 +234,17 @@ function SectionTitle({ children }) {
 
 // ============ صفحة النظام المالي الكاملة ============
 export function FinancePage({ finance, onBack, logo }) {
-  const { steps, dailyLimit, todayExpense, remainingToday, availableBalance, emergencyExpenses, addDaily, resetDaily, addEmergency, removeEmergency } = finance;
+  const { steps, dailyLimit, todayExpense, remainingToday, availableBalance, dailyExpenses, emergencyExpenses, addDaily, resetDaily, addEmergency, removeEmergency, removeDaily, exportState, importState } = finance;
 
   const [dailyInput, setDailyInput] = useState("");
   const [emAmount, setEmAmount] = useState("");
   const [emDesc, setEmDesc] = useState("");
   const [dailyMsg, setDailyMsg] = useState(null);
   const [emMsg, setEmMsg] = useState(null);
+  const [backupMsg, setBackupMsg] = useState(null);
   const [toast, setToast] = useState(null);
   const toastTimer = useRef(null);
+  const fileRef = useRef(null);
 
   const showToast = (text) => {
     setToast(text);
@@ -244,6 +284,45 @@ export function FinancePage({ finance, onBack, logo }) {
     setEmMsg({ type: "success", text: "تمت الإضافة بنجاح ✓" });
     setEmAmount(""); setEmDesc("");
     showToast("تمت الإضافة بنجاح ✓");
+  };
+
+  const doExport = () => {
+    try {
+      const blob = new Blob([JSON.stringify(exportState(), null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `istimrar-finance-${todayKey()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setBackupMsg({ type: "success", text: "تم تصدير نسخة احتياطية ✓" });
+      showToast("تم تصدير نسخة احتياطية ✓");
+    } catch {
+      setBackupMsg({ type: "danger", text: "تعذّر التصدير" });
+    }
+  };
+
+  const doImportFile = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const obj = JSON.parse(reader.result);
+        if (importState(obj)) {
+          setBackupMsg({ type: "success", text: "تم استيراد البيانات بنجاح ✓" });
+          showToast("تم الاستيراد ✓");
+        } else {
+          setBackupMsg({ type: "danger", text: "الملف لا يحتوي بيانات مالية صالحة" });
+        }
+      } catch {
+        setBackupMsg({ type: "danger", text: "تعذّر قراءة الملف (JSON غير صالح)" });
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = ""; // للسماح باستيراد نفس الملف مجدداً
   };
 
   const StepRow = ({ label, value, formula, final }) => (
@@ -326,6 +405,20 @@ export function FinancePage({ finance, onBack, logo }) {
         <button onClick={onResetDaily} style={{ marginTop: 12, width: "100%", background: "transparent", border: `1px solid ${C.border}`, color: C.textSoft, borderRadius: 12, padding: "11px", fontFamily: FONT_STACK, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
           إعادة تعيين لليوم الجديد 🔄
         </button>
+
+        {dailyExpenses.length > 0 && (
+          <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 8, borderTop: `1px solid ${C.borderSoft}`, paddingTop: 14 }}>
+            <div style={{ fontSize: 12, color: C.textMuted, fontWeight: 700 }}>سجل مصروفات اليوم</div>
+            {dailyExpenses.slice().reverse().map((e) => (
+              <div key={e.ts} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, fontSize: 13 }}>
+                <span style={{ color: C.textMuted, fontSize: 11 }}>{fmtTime(e.ts)}</span>
+                <span style={{ flex: 1 }} />
+                <span style={{ color: FIN.info, fontWeight: 700 }}>{fmt(e.amount)} ر.س</span>
+                <button onClick={() => removeDaily(e.ts)} aria-label="حذف" style={{ background: "transparent", border: "none", color: C.textMuted, cursor: "pointer", fontSize: 16, lineHeight: 1 }}>✕</button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* القسم 3: المصروفات الطارئة */}
@@ -375,6 +468,25 @@ export function FinancePage({ finance, onBack, logo }) {
           <span style={{ fontSize: 15, fontWeight: 800, color: C.text }}>الإجمالي</span>
           <span style={{ fontSize: 18, fontWeight: 800, color: C.primary }}>{fmt(FIXED_TOTAL)} ر.س</span>
         </div>
+      </div>
+
+      {/* القسم 5: النسخ الاحتياطي */}
+      <div style={sectionCard}>
+        <SectionTitle>💾 النسخ الاحتياطي</SectionTitle>
+        <p style={{ margin: "0 0 14px", fontSize: 13, color: C.textMuted, lineHeight: 1.7 }}>
+          احفظ نسخة من بياناتك (المصروفات اليومية والطارئة) كملف على جهازك، واسترجعها وقت الحاجة أو على جهاز آخر. لا تُرفع بياناتك لأي سيرفر.
+        </p>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <PrimaryButton onClick={doExport}>⬇️ تصدير نسخة</PrimaryButton>
+          <button
+            onClick={() => fileRef.current && fileRef.current.click()}
+            style={{ background: "transparent", border: `1px solid ${C.border}`, color: C.textSoft, borderRadius: 12, padding: "12px 18px", fontFamily: FONT_STACK, fontSize: 15, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}
+          >
+            ⬆️ استيراد نسخة
+          </button>
+          <input ref={fileRef} type="file" accept="application/json,.json" onChange={doImportFile} style={{ display: "none" }} />
+        </div>
+        <Msg msg={backupMsg} />
       </div>
     </div>
   );
