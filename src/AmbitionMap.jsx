@@ -2,25 +2,18 @@ import { useState, useEffect, useRef } from "react";
 
 // مسار الأصول يتبع base في vite.config.js (مثال: "/istimrar/")
 const ASSET_BASE = import.meta.env.BASE_URL;
+const LOGO = `${ASSET_BASE}brand/logo.png`;
 
-// خط ثمانية أساسي مع Noto Naskh Arabic كبديل مقارب يعمل فوراً.
-// ضع ملفات .otf الأصلية في public/fonts/ (انظر public/fonts/README.md).
+// خط ثمانية (Thomaniyah) أساسي مع Noto Naskh Arabic كبديل مقارب يعمل فوراً.
+// ضع ملف الخط المتغيّر في public/fonts/Thomaniyah.otf (انظر public/fonts/README.md).
 const FONT_STYLE = `
   @import url('https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;500;600;700&display=swap');
 
   @font-face {
-    font-family: 'Thmanyah';
-    font-style: normal;
-    font-weight: 400;
+    font-family: 'Thomaniyah';
+    src: url('${ASSET_BASE}fonts/Thomaniyah.otf') format('opentype');
+    font-weight: 100 900;
     font-display: swap;
-    src: url('${ASSET_BASE}fonts/Thmanyah-Regular.otf') format('opentype');
-  }
-  @font-face {
-    font-family: 'Thmanyah';
-    font-style: normal;
-    font-weight: 700;
-    font-display: swap;
-    src: url('${ASSET_BASE}fonts/Thmanyah-Bold.otf') format('opentype');
   }
 
   @keyframes toastSlideDown {
@@ -29,77 +22,76 @@ const FONT_STYLE = `
   }
 `;
 
-const FONT_STACK = "'Thmanyah', 'Noto Naskh Arabic', sans-serif";
+const FONT_STACK = "'Thomaniyah', 'Noto Naskh Arabic', 'Segoe UI', serif";
 
-// القيم مربوطة بمتغيّرات tokens.css؛ الاحتياطي يبقي الشكل الحالي
-// إلى أن يُستبدل tokens.css بالنسخة الرسمية من design_handoff_brand_identity.
-const COLORS = {
-  bg: "var(--color-bg, #FAFAFA)",
-  text: "var(--color-text, #121717)",
-  primary: "var(--color-primary, #007F7D)",
-  action: "var(--color-action, #FFCC00)",
-  purple: "var(--color-purple, #8338EC)",
-  card: "var(--color-card, #FFFFFF)",
-  border: "var(--color-border, #E8ECEC)",
-  lightTeal: "var(--color-light-teal, #E6F4F4)",
-  lightPurple: "var(--color-light-purple, #F0E8FD)",
-  lightYellow: "var(--color-light-yellow, #FFF9E0)",
+// ألوان الهوية — تُقرأ من tokens.css مع قيم احتياطية.
+const C = {
+  bg: "var(--color-bg, #02070B)",
+  bgDeep: "var(--color-bg-deep, #04121F)",
+  card: "var(--color-card, #0A1622)",
+  card2: "var(--color-card-2, #0B2A4A)",
+  primary: "var(--color-primary, #31E6D7)",
+  primaryHover: "var(--color-primary-hover, #5EF0E4)",
+  ocean: "var(--color-ocean, #123A5C)",
+  steel: "var(--color-steel, #1E7FA8)",
+  teal: "var(--color-teal, #24B5C0)",
+  text: "var(--color-text, #EAF6F7)",
+  textSoft: "var(--color-text-soft, #B9E9EC)",
+  textMuted: "var(--color-text-muted, #8FA6B2)",
+  border: "var(--color-border, #1B2A36)",
+  borderSoft: "var(--color-border-soft, rgba(255,255,255,0.06))",
+  hairline: "var(--color-hairline, rgba(49,230,215,0.14))",
+  gradient: "var(--gradient-brand, linear-gradient(90deg,#0B2A4A,#123A5C,#1E7FA8,#24B5C0,#31E6D7))",
+  glow: "var(--glow, 0 0 40px rgba(49,230,215,0.18))",
+};
+
+// لون شارة الدور حسب نوعه
+const TYPE_ACCENT = {
+  "أساسي": { color: "#31E6D7", tint: "rgba(49,230,215,0.10)" },
+  "اختياري": { color: "#1E7FA8", tint: "rgba(30,127,168,0.16)" },
+  "مساند": { color: "#24B5C0", tint: "rgba(36,181,192,0.14)" },
 };
 
 const roles = [
   {
     name: "المسلم المُلتزم",
     type: "أساسي",
-    color: COLORS.primary,
-    bg: COLORS.lightTeal,
     mpl: "أصلي كل فرض في وقته، وأراجع حفظي للقرآن ١٥ دقيقة يومياً",
     goal: "أحفظ جزءين جديدين وأُلقي محاضرة توعوية واحدة على الأقل",
   },
   {
     name: "متعلّم الإنجليزي",
     type: "أساسي",
-    color: COLORS.purple,
-    bg: COLORS.lightPurple,
     mpl: "أتعلّم الإنجليزي ٣٠ دقيقة يومياً",
     goal: "أصل لمستوى محادثة بطلاقة",
   },
   {
     name: "الابن البار",
     type: "أساسي",
-    color: COLORS.primary,
-    bg: COLORS.lightTeal,
     mpl: "أزور والديّ أو أتصل بهم ٣ مرات أسبوعياً على الأقل",
     goal: "أُخصص مبلغاً ثابتاً شهرياً لوالديّ من دخلي",
   },
   {
     name: "مدير تأسيس وتشغيل",
     type: "أساسي",
-    color: "#E8760A",
-    bg: "#FFF3E8",
     mpl: "أُنجز مهامي اليومية وأراجع مؤشرات العلامة التجارية كل أسبوع",
     goal: "أُطلق العلامة التجارية رسمياً وأحقق أول ١٠٠ عميل فعلي",
   },
   {
     name: "رائد الأعمال الرقمي",
     type: "اختياري",
-    color: COLORS.purple,
-    bg: COLORS.lightPurple,
     mpl: "أُطبّق درساً واحداً من كورساتي أسبوعياً على مشروع حقيقي",
     goal: "أُطلق أول مشروع تجارة إلكترونية مستقل وأحقق أول بيعة",
   },
   {
     name: "المتعلم المستمر",
     type: "اختياري",
-    color: COLORS.purple,
-    bg: COLORS.lightPurple,
     mpl: "أُكمل ٣٠ دقيقة تعلم يومياً في التسويق الرقمي أو الإدارة",
     goal: "أُنهي كورسين كاملين وأحصل على شهادة معتمدة في مجاله",
   },
   {
     name: "المُعطي والمُتصدّق",
     type: "مساند",
-    color: "#2DA44E",
-    bg: "#E8F5EC",
     mpl: "أُخصص نسبة ثابتة من دخلي للصدقة والمساعدة شهرياً",
     goal: "أُساعد ٥ أشخاص محتاجين بشكل مباشر خلال ٢٠٢٦",
   },
@@ -139,6 +131,22 @@ function getMotivationMessage(pct) {
   if (pct >= 30) return "بداية موفقة كمّل يا وحش 🔥";
   return "يلا نبدأ";
 }
+
+// ترويسة قسم بنمط دليل الهوية: عنوان فيروزي صغير متباعد ثم عنوان كبير
+function Eyebrow({ children }) {
+  return (
+    <p style={{ margin: 0, fontSize: 11, letterSpacing: 4, color: C.primary, fontWeight: 600 }}>
+      {children}
+    </p>
+  );
+}
+
+const cardStyle = {
+  background: C.card,
+  borderRadius: 26,
+  border: `1px solid ${C.borderSoft}`,
+  padding: "22px 20px",
+};
 
 export default function AmbitionMap() {
   const [activeTab, setActiveTab] = useState(0);
@@ -180,7 +188,7 @@ export default function AmbitionMap() {
   const tabs = ["الحلم الجريء", "أدواري", "قائمتي اليومية"];
 
   return (
-    <div style={{ fontFamily: FONT_STACK, background: COLORS.bg, minHeight: "100vh", direction: "rtl", color: COLORS.text }}>
+    <div style={{ fontFamily: FONT_STACK, background: C.bg, minHeight: "100vh", direction: "rtl", color: C.text }}>
       <style>{FONT_STYLE}</style>
 
       {/* Toast */}
@@ -190,13 +198,14 @@ export default function AmbitionMap() {
           top: 16,
           left: "50%",
           transform: "translateX(-50%)",
-          background: COLORS.text,
-          color: "#fff",
-          padding: "10px 20px",
-          borderRadius: 20,
+          background: C.card,
+          color: C.text,
+          padding: "10px 22px",
+          borderRadius: 999,
           fontSize: 14,
-          fontWeight: 600,
-          boxShadow: "0 4px 16px rgba(0,0,0,0.25)",
+          fontWeight: 700,
+          border: `1px solid ${C.hairline}`,
+          boxShadow: C.glow,
           zIndex: 1000,
           animation: "toastSlideDown 0.25s ease",
           whiteSpace: "nowrap",
@@ -206,35 +215,51 @@ export default function AmbitionMap() {
       )}
 
       {/* Header */}
-      <div style={{ background: COLORS.primary, padding: "24px 20px 0", color: "#fff" }}>
-        <p style={{ margin: 0, fontSize: 13, opacity: 0.75, fontWeight: 400, marginBottom: 4 }}>خريطة الطموح</p>
-        <h1 style={{ margin: "0 0 20px", fontSize: 22, fontWeight: 600, lineHeight: 1.4 }}>
-          طريقك للمليون ريال<br />والأثر الذي يُذكر
-        </h1>
+      <div style={{
+        background: "radial-gradient(circle at 50% 0%, rgba(49,230,215,0.12), transparent 60%), linear-gradient(160deg, #04121F, #02070B 72%)",
+        padding: "26px 20px 22px",
+        borderBottom: `1px solid ${C.borderSoft}`,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 18 }}>
+          <img
+            src={LOGO}
+            alt="الشعار"
+            style={{ width: 52, height: 52, filter: "drop-shadow(0 0 22px rgba(49,230,215,0.35))" }}
+          />
+          <div>
+            <Eyebrow>خريطة الطموح</Eyebrow>
+            <h1 style={{ margin: "6px 0 0", fontSize: 22, fontWeight: 800, lineHeight: 1.35, color: C.text }}>
+              طريقك للمليون ريال<br />والأثر الذي يُذكر
+            </h1>
+          </div>
+        </div>
 
         {/* Tabs */}
-        <div style={{ display: "flex", gap: 4 }}>
-          {tabs.map((tab, i) => (
-            <button
-              key={i}
-              onClick={() => setActiveTab(i)}
-              style={{
-                flex: 1,
-                padding: "10px 4px",
-                border: "none",
-                borderRadius: "12px 12px 0 0",
-                background: activeTab === i ? COLORS.bg : "rgba(255,255,255,0.15)",
-                color: activeTab === i ? COLORS.primary : "#fff",
-                fontFamily: FONT_STACK,
-                fontWeight: activeTab === i ? 600 : 400,
-                fontSize: 13,
-                cursor: "pointer",
-                transition: "all 0.2s",
-              }}
-            >
-              {tab}
-            </button>
-          ))}
+        <div style={{ display: "flex", gap: 8 }}>
+          {tabs.map((tab, i) => {
+            const active = activeTab === i;
+            return (
+              <button
+                key={i}
+                onClick={() => setActiveTab(i)}
+                style={{
+                  flex: 1,
+                  padding: "10px 4px",
+                  border: `1px solid ${active ? C.hairline : "transparent"}`,
+                  borderRadius: 999,
+                  background: active ? "rgba(49,230,215,0.12)" : "rgba(255,255,255,0.04)",
+                  color: active ? C.primary : C.textMuted,
+                  fontFamily: FONT_STACK,
+                  fontWeight: active ? 700 : 500,
+                  fontSize: 13,
+                  cursor: "pointer",
+                  transition: "all 0.2s",
+                }}
+              >
+                {tab}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -246,26 +271,28 @@ export default function AmbitionMap() {
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
             {/* فقرة الحلم */}
-            <div style={{ background: COLORS.card, borderRadius: 32, padding: "24px 20px", boxShadow: "0 2px 12px rgba(0,127,125,0.08)", border: `1px solid ${COLORS.border}` }}>
-              <p style={{ margin: "0 0 8px", fontSize: 12, color: COLORS.primary, fontWeight: 600, letterSpacing: 0.5 }}>◈ الحلم الجريء</p>
-              <p style={{ margin: 0, fontSize: 15, lineHeight: 1.9, fontWeight: 400, color: COLORS.text }}>
+            <div style={{ ...cardStyle, padding: "24px 20px", position: "relative", overflow: "hidden" }}>
+              <div style={{ position: "absolute", top: 0, right: 0, left: 0, height: 3, background: C.gradient }} />
+              <div style={{ marginBottom: 10 }}><Eyebrow>◈ الحلم الجريء</Eyebrow></div>
+              <p style={{ margin: 0, fontSize: 15, lineHeight: 1.9, fontWeight: 400, color: C.textSoft }}>
                 في سن الثلاثين، أملك شركتي الخاصة وأجلس على كرسي الرئيس التنفيذي — لا موظفاً ولا تابعاً. دخلي الشهري يتجاوز المليون ريال، وأسرتي تعيش حياة كريمة بعيدة عن الضغط المادي. أُعين والديّ وعمومتي براتب ثابت كل شهر، وأساعد كل محتاج يطرق بابي.
                 وفوق كل ذلك، أكون حافظاً لكتاب الله، وصوتاً يُوجّه الناس للخير في محاضراتي.
               </p>
             </div>
 
             {/* الرسالة */}
-            <div style={{ background: COLORS.action, borderRadius: 32, padding: "20px", boxShadow: "0 2px 8px rgba(255,204,0,0.25)" }}>
-              <p style={{ margin: "0 0 6px", fontSize: 11, color: "#7A5E00", fontWeight: 600, letterSpacing: 0.5 }}>◈ رسالتي</p>
-              <p style={{ margin: 0, fontSize: 16, fontWeight: 600, color: COLORS.text, lineHeight: 1.6 }}>
+            <div style={{ ...cardStyle, position: "relative", overflow: "hidden" }}>
+              <div style={{ position: "absolute", top: 0, bottom: 0, right: 0, width: 4, background: C.gradient }} />
+              <div style={{ marginBottom: 8 }}><Eyebrow>◈ رسالتي</Eyebrow></div>
+              <p style={{ margin: 0, fontSize: 17, fontWeight: 700, color: C.text, lineHeight: 1.7 }}>
                 "أبني ثروة بضمير، وأُغيّر حياة الناس بالعلم والعطاء."
               </p>
             </div>
 
             {/* الأثر المجتمعي */}
-            <div style={{ background: COLORS.card, borderRadius: 32, padding: "20px", border: `1px solid ${COLORS.border}` }}>
-              <p style={{ margin: "0 0 6px", fontSize: 11, color: COLORS.purple, fontWeight: 600, letterSpacing: 0.5 }}>◈ الأثر المجتمعي</p>
-              <p style={{ margin: 0, fontSize: 14, lineHeight: 1.8, color: COLORS.text }}>
+            <div style={cardStyle}>
+              <div style={{ marginBottom: 8 }}><Eyebrow>◈ الأثر المجتمعي</Eyebrow></div>
+              <p style={{ margin: 0, fontSize: 14, lineHeight: 1.9, color: C.textMuted }}>
                 موظفون يتكسبون من مشروعه، وعائلة كاملة تعيش بكرامة بسببه.
                 <br />
                 أناس يسمعون كلمة حق في محاضراته فتُغيّر مساراتهم.
@@ -273,11 +300,17 @@ export default function AmbitionMap() {
             </div>
 
             {/* النجمة الشمالية */}
-            <div style={{ background: COLORS.primary, borderRadius: 32, padding: "20px", color: "#fff" }}>
-              <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 600, letterSpacing: 0.5, opacity: 0.8 }}>◈ النجمة الشمالية — ٢٠٣٠</p>
-              <p style={{ margin: 0, fontSize: 14, lineHeight: 1.8, fontWeight: 400 }}>
+            <div style={{
+              borderRadius: 26,
+              padding: "22px 20px",
+              color: C.text,
+              background: "radial-gradient(circle at 15% 0%, rgba(49,230,215,0.14), transparent 55%), linear-gradient(160deg, #081826, #02070B)",
+              border: `1px solid ${C.hairline}`,
+            }}>
+              <div style={{ marginBottom: 8 }}><Eyebrow>◈ النجمة الشمالية — ٢٠٣٠</Eyebrow></div>
+              <p style={{ margin: 0, fontSize: 14, lineHeight: 1.9, fontWeight: 400, color: C.textSoft }}>
                 رئيس تنفيذي لشركته، متزوج ومستقر، حافظ لكتاب الله، ومحاضر معروف —
-                يقول عنه الناس: <strong>"ما قصّر علينا وما نسي ربه."</strong>
+                يقول عنه الناس: <strong style={{ color: C.primary }}>"ما قصّر علينا وما نسي ربه."</strong>
               </p>
             </div>
           </div>
@@ -286,26 +319,29 @@ export default function AmbitionMap() {
         {/* TAB 2 — الأدوار */}
         {activeTab === 1 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            {roles.map((role, i) => (
-              <div key={i} style={{ background: COLORS.card, borderRadius: 32, padding: "20px", border: `1px solid ${COLORS.border}`, boxShadow: "0 1px 8px rgba(0,0,0,0.04)" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-                  <p style={{ margin: 0, fontSize: 16, fontWeight: 600, color: COLORS.text }}>{role.name}</p>
-                  <span style={{ background: role.bg, color: role.color, borderRadius: 20, padding: "3px 10px", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", marginRight: 8 }}>
-                    {role.type}
-                  </span>
-                </div>
+            {roles.map((role, i) => {
+              const accent = TYPE_ACCENT[role.type] || TYPE_ACCENT["أساسي"];
+              return (
+                <div key={i} style={cardStyle}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                    <p style={{ margin: 0, fontSize: 16, fontWeight: 700, color: C.text }}>{role.name}</p>
+                    <span style={{ background: accent.tint, color: accent.color, borderRadius: 999, padding: "3px 12px", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap", marginRight: 8, border: `1px solid ${accent.color}33` }}>
+                      {role.type}
+                    </span>
+                  </div>
 
-                <div style={{ marginBottom: 10 }}>
-                  <p style={{ margin: "0 0 4px", fontSize: 11, color: "#888", fontWeight: 600 }}>الحد الأدنى للأداء</p>
-                  <p style={{ margin: 0, fontSize: 13, lineHeight: 1.7, color: COLORS.text }}>{role.mpl}</p>
-                </div>
+                  <div style={{ marginBottom: 12 }}>
+                    <p style={{ margin: "0 0 4px", fontSize: 11, color: C.textMuted, fontWeight: 600 }}>الحد الأدنى للأداء</p>
+                    <p style={{ margin: 0, fontSize: 13, lineHeight: 1.8, color: C.textSoft }}>{role.mpl}</p>
+                  </div>
 
-                <div style={{ background: role.bg, borderRadius: 16, padding: "12px 14px" }}>
-                  <p style={{ margin: "0 0 4px", fontSize: 11, color: role.color, fontWeight: 600 }}>هدف ٢٠٢٦</p>
-                  <p style={{ margin: 0, fontSize: 13, lineHeight: 1.7, color: COLORS.text }}>{role.goal}</p>
+                  <div style={{ background: accent.tint, borderRadius: 16, padding: "12px 14px", border: `1px solid ${C.borderSoft}` }}>
+                    <p style={{ margin: "0 0 4px", fontSize: 11, color: accent.color, fontWeight: 700 }}>هدف ٢٠٢٦</p>
+                    <p style={{ margin: 0, fontSize: 13, lineHeight: 1.8, color: C.text }}>{role.goal}</p>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
@@ -314,29 +350,35 @@ export default function AmbitionMap() {
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
             {/* Date */}
-            <div style={{ textAlign: "center", padding: "12px", background: COLORS.lightTeal, borderRadius: 20 }}>
-              <p style={{ margin: 0, fontSize: 13, color: COLORS.primary, fontWeight: 600 }}>{getArabicDate()}</p>
+            <div style={{ textAlign: "center", padding: "12px", background: "rgba(49,230,215,0.08)", borderRadius: 16, border: `1px solid ${C.borderSoft}` }}>
+              <p style={{ margin: 0, fontSize: 13, color: C.primary, fontWeight: 600 }}>{getArabicDate()}</p>
             </div>
 
             {/* مؤشر تقدّمك اليوم */}
             {(() => {
               const todayProg = getProgress("daily");
               return (
-                <div style={{ background: COLORS.primary, borderRadius: 32, padding: "20px", color: "#fff" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                    <p style={{ margin: 0, fontSize: 14, fontWeight: 600, opacity: 0.9 }}>مؤشر تقدّمك اليوم</p>
-                    <span style={{ fontSize: 20, fontWeight: 600 }}>{todayProg.pct}%</span>
+                <div style={{
+                  borderRadius: 26,
+                  padding: "22px 20px",
+                  color: C.text,
+                  background: "radial-gradient(circle at 15% 0%, rgba(49,230,215,0.14), transparent 55%), linear-gradient(160deg, #081826, #02070B)",
+                  border: `1px solid ${C.hairline}`,
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                    <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: C.textSoft }}>مؤشر تقدّمك اليوم</p>
+                    <span style={{ fontSize: 22, fontWeight: 800, color: C.primary }}>{todayProg.pct}%</span>
                   </div>
-                  <div style={{ background: "rgba(255,255,255,0.25)", borderRadius: 8, height: 8, marginBottom: 12, overflow: "hidden" }}>
+                  <div style={{ background: "rgba(255,255,255,0.08)", borderRadius: 999, height: 8, marginBottom: 14, overflow: "hidden" }}>
                     <div style={{
                       height: "100%",
-                      background: "#fff",
-                      borderRadius: 8,
+                      background: C.gradient,
+                      borderRadius: 999,
                       width: `${todayProg.pct}%`,
                       transition: "width 0.3s ease",
                     }} />
                   </div>
-                  <p style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>{getMotivationMessage(todayProg.pct)}</p>
+                  <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: C.text }}>{getMotivationMessage(todayProg.pct)}</p>
                 </div>
               );
             })()}
@@ -347,64 +389,70 @@ export default function AmbitionMap() {
               { label: "الشهري", key: "monthly", icon: "🌙" },
             ].map(({ label, key, icon }) => {
               const prog = getProgress(key);
+              const complete = prog.pct === 100;
               return (
-                <div key={key} style={{ background: COLORS.card, borderRadius: 32, padding: "20px", border: `1px solid ${COLORS.border}` }}>
+                <div key={key} style={cardStyle}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-                    <p style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>{icon} {label}</p>
-                    <span style={{ fontSize: 12, color: COLORS.primary, fontWeight: 600 }}>{prog.done}/{prog.total}</span>
+                    <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: C.text }}>{icon} {label}</p>
+                    <span style={{ fontSize: 12, color: complete ? C.primary : C.textMuted, fontWeight: 700 }}>{prog.done}/{prog.total}</span>
                   </div>
 
                   {/* Progress bar */}
-                  <div style={{ background: COLORS.border, borderRadius: 8, height: 6, marginBottom: 16, overflow: "hidden" }}>
+                  <div style={{ background: "rgba(255,255,255,0.06)", borderRadius: 999, height: 6, marginBottom: 16, overflow: "hidden" }}>
                     <div style={{
                       height: "100%",
-                      background: prog.pct === 100 ? "#2DA44E" : COLORS.primary,
-                      borderRadius: 8,
+                      background: C.gradient,
+                      borderRadius: 999,
                       width: `${prog.pct}%`,
-                      transition: "width 0.3s ease"
+                      boxShadow: complete ? C.glow : "none",
+                      transition: "width 0.3s ease",
                     }} />
                   </div>
 
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    {dailyTasks.filter((t) => t.period === key).map((task) => (
-                      <div
-                        key={task.id}
-                        onClick={() => toggleCheck(task.id)}
-                        style={{
-                          display: "flex",
-                          alignItems: "flex-start",
-                          gap: 12,
-                          cursor: "pointer",
-                          opacity: checked[task.id] ? 0.55 : 1,
-                          transition: "opacity 0.2s",
-                        }}
-                      >
-                        <div style={{
-                          width: 22,
-                          height: 22,
-                          borderRadius: 8,
-                          border: `2px solid ${checked[task.id] ? COLORS.primary : COLORS.border}`,
-                          background: checked[task.id] ? COLORS.primary : "transparent",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          flexShrink: 0,
-                          marginTop: 1,
-                          transition: "all 0.2s",
-                        }}>
-                          {checked[task.id] && <span style={{ color: "#fff", fontSize: 13, lineHeight: 1 }}>✓</span>}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                    {dailyTasks.filter((t) => t.period === key).map((task) => {
+                      const done = checked[task.id];
+                      return (
+                        <div
+                          key={task.id}
+                          onClick={() => toggleCheck(task.id)}
+                          style={{
+                            display: "flex",
+                            alignItems: "flex-start",
+                            gap: 12,
+                            cursor: "pointer",
+                            opacity: done ? 0.5 : 1,
+                            transition: "opacity 0.2s",
+                          }}
+                        >
+                          <div style={{
+                            width: 22,
+                            height: 22,
+                            borderRadius: 7,
+                            border: `2px solid ${done ? C.primary : C.border}`,
+                            background: done ? C.primary : "transparent",
+                            boxShadow: done ? C.glow : "none",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            flexShrink: 0,
+                            marginTop: 1,
+                            transition: "all 0.2s",
+                          }}>
+                            {done && <span style={{ color: C.bg, fontSize: 13, lineHeight: 1, fontWeight: 800 }}>✓</span>}
+                          </div>
+                          <p style={{
+                            margin: 0,
+                            fontSize: 14,
+                            lineHeight: 1.6,
+                            textDecoration: done ? "line-through" : "none",
+                            color: done ? C.textMuted : C.textSoft,
+                          }}>
+                            {task.text}
+                          </p>
                         </div>
-                        <p style={{
-                          margin: 0,
-                          fontSize: 14,
-                          lineHeight: 1.6,
-                          textDecoration: checked[task.id] ? "line-through" : "none",
-                          color: COLORS.text,
-                        }}>
-                          {task.text}
-                        </p>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               );
@@ -414,17 +462,17 @@ export default function AmbitionMap() {
             <button
               onClick={resetAll}
               style={{
-                background: COLORS.action,
+                background: C.gradient,
                 border: "none",
-                borderRadius: 24,
+                borderRadius: 999,
                 padding: "14px",
                 width: "100%",
                 fontFamily: FONT_STACK,
                 fontSize: 15,
-                fontWeight: 600,
-                color: COLORS.text,
+                fontWeight: 800,
+                color: C.bg,
                 cursor: "pointer",
-                boxShadow: "0 4px 16px rgba(255,204,0,0.3)",
+                boxShadow: C.glow,
                 marginTop: 4,
               }}
             >
