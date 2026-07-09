@@ -2,8 +2,6 @@ import { useState, useEffect, useRef } from "react";
 import { C, FONT_STACK, FIN } from "./theme";
 import {
   FINANCE,
-  FIXED_COMMITMENTS,
-  FIXED_TOTAL,
   computeSteps,
   round2,
   fmt,
@@ -53,7 +51,9 @@ export function useFinance() {
     };
   }, []);
 
-  const steps = computeSteps();
+  const commitments = state.commitments || [];
+  const fixedTotal = sumAmounts(commitments);
+  const steps = computeSteps(fixedTotal);
   const todayExpense = sumAmounts(state.dailyExpenses);
   const remainingToday = round2(FINANCE.dailyLimit - todayExpense);
   const emergencyTotal = sumAmounts(state.emergencyExpenses);
@@ -102,24 +102,48 @@ export function useFinance() {
       dailyExpenses: s.dailyExpenses.filter((e) => e.ts !== ts),
     }));
 
+  // إدارة الالتزامات — أي تغيير يعيد حساب كل الأرقام فوراً
+  const addCommitment = (name, amount) =>
+    setState((s) => ({
+      ...s,
+      commitments: [...(s.commitments || []), { id: `c${Date.now()}`, name: String(name).trim(), amount: round2(amount) }],
+    }));
+  const updateCommitment = (id, name, amount) =>
+    setState((s) => ({
+      ...s,
+      commitments: (s.commitments || []).map((c) =>
+        c.id === id ? { ...c, name: String(name).trim(), amount: round2(amount) } : c
+      ),
+    }));
+  const removeCommitment = (id) =>
+    setState((s) => ({ ...s, commitments: (s.commitments || []).filter((c) => c.id !== id) }));
+
+  // حالة طيّ قسم خطوات الحساب (محفوظة بين الجلسات)
+  const setSalaryStepsExpanded = (val) =>
+    setState((s) => ({ ...s, salaryStepsExpanded: typeof val === "function" ? val(!!s.salaryStepsExpanded) : !!val }));
+
   // نسخة احتياطية للتصدير/الاستيراد
   const exportState = () => ({
     _app: "istimrar-finance",
     _version: 1,
     _exportedAt: new Date().toISOString(),
+    commitments: state.commitments || [],
     dailyExpenses: state.dailyExpenses,
     emergencyExpenses: state.emergencyExpenses,
     history: state.history || [],
+    salaryStepsExpanded: !!state.salaryStepsExpanded,
     lastReset: state.lastReset,
   });
   const importState = (obj) => {
     if (!obj || typeof obj !== "object") return false;
-    if (!Array.isArray(obj.dailyExpenses) && !Array.isArray(obj.emergencyExpenses)) return false;
-    setState(
+    if (!Array.isArray(obj.dailyExpenses) && !Array.isArray(obj.emergencyExpenses) && !Array.isArray(obj.commitments)) return false;
+    setState((s) =>
       rolloverIfNeeded({
+        commitments: Array.isArray(obj.commitments) ? obj.commitments : (s.commitments || []),
         dailyExpenses: Array.isArray(obj.dailyExpenses) ? obj.dailyExpenses : [],
         emergencyExpenses: Array.isArray(obj.emergencyExpenses) ? obj.emergencyExpenses : [],
         history: Array.isArray(obj.history) ? obj.history : [],
+        salaryStepsExpanded: !!obj.salaryStepsExpanded,
         lastReset: obj.lastReset || todayKey(),
       })
     );
@@ -138,6 +162,9 @@ export function useFinance() {
     monthlyDailyTotal,
     monthlyEmergencyTotal,
     monthlyTotal,
+    commitments,
+    fixedTotal,
+    salaryStepsExpanded: !!state.salaryStepsExpanded,
     dailyExpenses: state.dailyExpenses,
     emergencyExpenses: state.emergencyExpenses,
     addDaily,
@@ -145,6 +172,10 @@ export function useFinance() {
     addEmergency,
     removeEmergency,
     removeDaily,
+    addCommitment,
+    updateCommitment,
+    removeCommitment,
+    setSalaryStepsExpanded,
     exportState,
     importState,
   };
@@ -270,9 +301,166 @@ function MiniStat({ label, value, color }) {
   );
 }
 
+// قسم قابل للطي بحركة height سلسة (grid-template-rows 0fr→1fr)
+function Accordion({ title, expanded, onToggle, children }) {
+  return (
+    <div style={{ background: C.bgDeep, borderRadius: 24, border: `1px solid ${C.borderSoft}`, overflow: "hidden" }}>
+      <button
+        onClick={onToggle}
+        aria-expanded={expanded}
+        style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: "transparent", border: "none", cursor: "pointer", padding: "18px", fontFamily: FONT_STACK, textAlign: "right" }}
+      >
+        <span style={{ fontSize: 16, fontWeight: 800, color: C.text }}>{title}</span>
+        <span style={{ display: "inline-flex", transition: "transform 300ms ease", transform: expanded ? "rotate(180deg)" : "rotate(0deg)", color: C.primary, fontSize: 13 }}>▼</span>
+      </button>
+      <div style={{ display: "grid", gridTemplateRows: expanded ? "1fr" : "0fr", transition: "grid-template-rows 300ms ease" }}>
+        <div style={{ overflow: "hidden" }}>
+          <div style={{ padding: "0 18px 18px" }}>{children}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// القسم D — إدارة الالتزامات الشهرية (إضافة / تعديل / حذف inline)
+function CommitmentsSection({ commitments, fixedTotal, addCommitment, updateCommitment, removeCommitment }) {
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newAmount, setNewAmount] = useState("");
+  const [editId, setEditId] = useState(null);
+  const [editName, setEditName] = useState("");
+  const [editAmount, setEditAmount] = useState("");
+  const [confirmId, setConfirmId] = useState(null);
+  const [err, setErr] = useState(null);
+
+  const smallInput = { ...inputStyle, padding: "9px 11px", fontSize: 14 };
+  const iconBtn = { background: "transparent", border: "none", cursor: "pointer", fontSize: 15, lineHeight: 1, padding: 4 };
+  const okBtn = { ...iconBtn, color: FIN.success, fontWeight: 800, fontSize: 19 };
+  const noBtn = { ...iconBtn, color: FIN.danger, fontWeight: 800, fontSize: 19 };
+
+  const startAdd = () => { setAdding(true); setNewName(""); setNewAmount(""); setErr(null); };
+  const saveAdd = () => {
+    const n = parseNum(newAmount);
+    if (!newName.trim() || !(n > 0)) { setErr("أدخل اسماً ومبلغاً صحيحاً"); return; }
+    addCommitment(newName, n); setAdding(false); setErr(null);
+  };
+  const startEdit = (c) => { setEditId(c.id); setEditName(c.name); setEditAmount(String(c.amount)); setConfirmId(null); setErr(null); };
+  const saveEdit = () => {
+    const n = parseNum(editAmount);
+    if (!editName.trim() || !(n > 0)) { setErr("أدخل اسماً ومبلغاً صحيحاً"); return; }
+    updateCommitment(editId, editName, n); setEditId(null); setErr(null);
+  };
+
+  return (
+    <div style={sectionCard}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, gap: 10 }}>
+        <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: C.text }}>📌 الالتزامات الشهرية</h2>
+        {!adding && (
+          <button onClick={startAdd} style={{ background: "rgba(49,230,215,0.12)", border: `1px solid ${C.hairline}`, color: C.primary, borderRadius: 999, padding: "7px 14px", fontFamily: FONT_STACK, fontSize: 13, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>+ إضافة جديد</button>
+        )}
+      </div>
+
+      {adding && (
+        <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
+          <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="اسم الالتزام" style={{ ...smallInput, flexBasis: "100%" }} />
+          <input value={newAmount} onChange={(e) => setNewAmount(e.target.value)} onKeyDown={(e) => e.key === "Enter" && saveAdd()} inputMode="decimal" placeholder="المبلغ" style={smallInput} />
+          <button onClick={saveAdd} style={okBtn} aria-label="حفظ">✓</button>
+          <button onClick={() => { setAdding(false); setErr(null); }} style={noBtn} aria-label="إلغاء">✗</button>
+        </div>
+      )}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {commitments.length === 0 && !adding && (
+          <p style={{ margin: 0, fontSize: 13, color: C.textMuted }}>لا توجد التزامات. أضِف واحداً بالزر أعلاه.</p>
+        )}
+        {commitments.map((c) => {
+          if (editId === c.id) {
+            return (
+              <div key={c.id} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <input value={editName} onChange={(e) => setEditName(e.target.value)} style={{ ...smallInput, flexBasis: "100%" }} />
+                <input value={editAmount} onChange={(e) => setEditAmount(e.target.value)} onKeyDown={(e) => e.key === "Enter" && saveEdit()} inputMode="decimal" style={smallInput} />
+                <button onClick={saveEdit} style={okBtn} aria-label="حفظ">✓</button>
+                <button onClick={() => { setEditId(null); setErr(null); }} style={noBtn} aria-label="إلغاء">✗</button>
+              </div>
+            );
+          }
+          if (confirmId === c.id) {
+            return (
+              <div key={c.id} style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between", background: `${FIN.danger}14`, border: `1px solid ${FIN.danger}44`, borderRadius: 12, padding: "8px 12px" }}>
+                <span style={{ fontSize: 13, color: FIN.danger, fontWeight: 700 }}>حذف "{c.name}"؟</span>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button onClick={() => { removeCommitment(c.id); setConfirmId(null); }} style={{ background: FIN.danger, border: "none", color: "#fff", borderRadius: 8, padding: "5px 14px", fontFamily: FONT_STACK, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>نعم</button>
+                  <button onClick={() => setConfirmId(null)} style={{ background: "transparent", border: `1px solid ${C.border}`, color: C.textSoft, borderRadius: 8, padding: "5px 14px", fontFamily: FONT_STACK, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>لا</button>
+                </div>
+              </div>
+            );
+          }
+          return (
+            <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 14, color: C.textSoft }}>{c.name}</span>
+              <span style={{ flex: 1, borderBottom: `1px dotted ${C.border}`, transform: "translateY(-4px)" }} />
+              <span style={{ fontSize: 14, color: C.text, fontWeight: 600, whiteSpace: "nowrap" }}>{fmt(c.amount)}</span>
+              <button onClick={() => startEdit(c)} style={iconBtn} aria-label="تعديل">✏️</button>
+              <button onClick={() => { setConfirmId(c.id); setEditId(null); }} style={iconBtn} aria-label="حذف">🗑️</button>
+            </div>
+          );
+        })}
+      </div>
+
+      {err && <Msg msg={{ type: "danger", text: err }} />}
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 16, paddingTop: 14, borderTop: `1px solid ${C.hairline}` }}>
+        <span style={{ fontSize: 15, fontWeight: 800, color: C.text }}>الإجمالي</span>
+        <span style={{ fontSize: 18, fontWeight: 800, color: C.primary }}>{fmt(fixedTotal)} ر.س</span>
+      </div>
+    </div>
+  );
+}
+
+// ============ Bottom Sheet يصعد من الأسفل (300ms) ============
+export function FinanceSheet({ open, finance, onClose, logo }) {
+  const [mounted, setMounted] = useState(open);
+  const [shown, setShown] = useState(false);
+
+  useEffect(() => {
+    let raf, t;
+    if (open) {
+      setMounted(true);
+      raf = requestAnimationFrame(() => setShown(true));
+    } else {
+      setShown(false);
+      t = setTimeout(() => setMounted(false), 300);
+    }
+    return () => { cancelAnimationFrame(raf); clearTimeout(t); };
+  }, [open]);
+
+  if (!mounted) return null;
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 2000, direction: "rtl", fontFamily: FONT_STACK }}>
+      <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.6)", opacity: shown ? 1 : 0, transition: "opacity 300ms ease" }} />
+      <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: "94vh", background: C.bg, borderTopLeftRadius: 28, borderTopRightRadius: 28, border: `1px solid ${C.borderSoft}`, boxShadow: "0 -20px 60px rgba(0,0,0,0.55)", transform: shown ? "translateY(0)" : "translateY(100%)", transition: "transform 300ms cubic-bezier(0.32,0.72,0,1)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div style={{ display: "flex", justifyContent: "center", padding: "10px 0 2px", flexShrink: 0 }}>
+          <div style={{ width: 44, height: 5, borderRadius: 999, background: C.border }} />
+        </div>
+        <div style={{ overflowY: "auto", flex: 1, WebkitOverflowScrolling: "touch" }}>
+          <FinancePage finance={finance} onBack={onClose} logo={logo} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ============ صفحة النظام المالي الكاملة ============
 export function FinancePage({ finance, onBack, logo }) {
-  const { steps, dailyLimit, todayExpense, remainingToday, availableBalance, status, monthDays, monthlyDailyTotal, monthlyEmergencyTotal, monthlyTotal, dailyExpenses, emergencyExpenses, addDaily, resetDaily, addEmergency, removeEmergency, removeDaily, exportState, importState } = finance;
+  const { steps, dailyLimit, todayExpense, remainingToday, availableBalance, status, monthDays, monthlyDailyTotal, monthlyEmergencyTotal, monthlyTotal, commitments, fixedTotal, salaryStepsExpanded, dailyExpenses, emergencyExpenses, addDaily, resetDaily, addEmergency, removeEmergency, removeDaily, addCommitment, updateCommitment, removeCommitment, setSalaryStepsExpanded, exportState, importState } = finance;
+
+  const todayLabel = (() => {
+    try {
+      return new Date().toLocaleDateString("ar-SA-u-ca-islamic", { weekday: "long", day: "numeric", month: "long" });
+    } catch {
+      return todayKey();
+    }
+  })();
 
   const [dailyInput, setDailyInput] = useState("");
   const [emAmount, setEmAmount] = useState("");
@@ -415,20 +603,20 @@ export function FinancePage({ finance, onBack, logo }) {
         </div>
       </div>
 
-      {/* القسم 1: خطوات الحساب */}
-      <div style={sectionCard}>
-        <SectionTitle>📊 خطوات حساب الراتب</SectionTitle>
+      {/* القسم B: خطوات الحساب (Accordion قابل للطي — مغلق افتراضياً) */}
+      <Accordion title="🧮 خطوات حساب الراتب" expanded={salaryStepsExpanded} onToggle={() => setSalaryStepsExpanded((v) => !v)}>
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <StepRow label="الخطوة ١: الراتب الكامل" value={fmt(steps.income)} />
-          <StepRow label="الخطوة ٢: بعد الالتزامات" formula={`${fmt(steps.income)} − ${fmt(FIXED_TOTAL)}`} value={fmt(steps.afterCommitments)} />
+          <StepRow label="الخطوة ٢: بعد الالتزامات" formula={`${fmt(steps.income)} − ${fmt(steps.fixedTotal)}`} value={fmt(steps.afterCommitments)} />
           <StepRow label="الخطوة ٣: بعد المصروفات اليومية" formula={`${dailyLimit} × ٣٠ = ${fmt(steps.monthlyDailyExpenses)}  ·  ${fmt(steps.afterCommitments)} − ${fmt(steps.monthlyDailyExpenses)}`} value={fmt(steps.baseAvailable)} />
           <StepRow label="✅ الرصيد النهائي (للادخار والطوارئ)" value={fmt(steps.baseAvailable)} final />
         </div>
-      </div>
+      </Accordion>
 
-      {/* القسم 2: تتبع المصروف اليومي */}
+      {/* القسم C: تتبع المصروف اليومي */}
       <div style={sectionCard}>
-        <SectionTitle>📅 تتبع المصروف اليومي</SectionTitle>
+        <h2 style={{ margin: "0 0 4px", fontSize: 17, fontWeight: 800, color: C.text }}>📅 تتبع المصروف اليومي</h2>
+        <div style={{ fontSize: 12, color: C.primary, fontWeight: 600, marginBottom: 16 }}>{todayLabel}</div>
         <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 12, fontSize: 13 }}>
           <span style={{ color: C.textMuted }}>الحد الآمن: <b style={{ color: C.text }}>{dailyLimit} ر.س</b></span>
           <span style={{ color: C.textMuted }}>المصروف: <b style={{ color: FIN.info }}>{fmt(todayExpense)} ر.س</b></span>
@@ -504,7 +692,16 @@ export function FinancePage({ finance, onBack, logo }) {
         )}
       </div>
 
-      {/* القسم 3: المصروفات الطارئة */}
+      {/* القسم D: إدارة الالتزامات الشهرية (إضافة/تعديل/حذف — إعادة حساب فورية) */}
+      <CommitmentsSection
+        commitments={commitments}
+        fixedTotal={fixedTotal}
+        addCommitment={addCommitment}
+        updateCommitment={updateCommitment}
+        removeCommitment={removeCommitment}
+      />
+
+      {/* القسم E: المصروفات الطارئة */}
       <div style={sectionCard}>
         <SectionTitle>🚨 إضافة مصروف طارئ</SectionTitle>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -535,25 +732,7 @@ export function FinancePage({ finance, onBack, logo }) {
         )}
       </div>
 
-      {/* القسم 4: الالتزامات الثابتة */}
-      <div style={sectionCard}>
-        <SectionTitle>📌 الالتزامات الثابتة الشهرية</SectionTitle>
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {FIXED_COMMITMENTS.map((c) => (
-            <div key={c.name} style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-              <span style={{ fontSize: 14, color: C.textSoft }}>{c.name}</span>
-              <span style={{ flex: 1, borderBottom: `1px dotted ${C.border}`, transform: "translateY(-4px)" }} />
-              <span style={{ fontSize: 14, color: C.text, fontWeight: 600 }}>{fmt(c.amount)}</span>
-            </div>
-          ))}
-        </div>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 16, paddingTop: 14, borderTop: `1px solid ${C.hairline}` }}>
-          <span style={{ fontSize: 15, fontWeight: 800, color: C.text }}>الإجمالي</span>
-          <span style={{ fontSize: 18, fontWeight: 800, color: C.primary }}>{fmt(FIXED_TOTAL)} ر.س</span>
-        </div>
-      </div>
-
-      {/* القسم 5: النسخ الاحتياطي */}
+      {/* القسم: النسخ الاحتياطي */}
       <div style={sectionCard}>
         <SectionTitle>💾 النسخ الاحتياطي</SectionTitle>
         <p style={{ margin: "0 0 14px", fontSize: 13, color: C.textMuted, lineHeight: 1.7 }}>

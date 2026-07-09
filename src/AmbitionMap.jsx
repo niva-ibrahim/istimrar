@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { C, FONT_STACK } from "./theme";
-import { useFinance, FinanceWidget, FinancePage } from "./Finance.jsx";
+import { useFinance, FinanceWidget, FinanceSheet } from "./Finance.jsx";
 
 // مسار الأصول يتبع base في vite.config.js (مثال: "/istimrar/")
 const ASSET_BASE = import.meta.env.BASE_URL;
@@ -195,10 +195,36 @@ export default function AmbitionMap() {
         </div>
       )}
 
-      {showFinance ? (
-        <FinancePage finance={finance} onBack={() => setShowFinance(false)} logo={LOGO} />
-      ) : (
-      <>
+      {/* أيقونة floating للنظام المالي — الزاوية العلوية اليسرى، فوق المحتوى */}
+      <button
+        onClick={() => setShowFinance(true)}
+        aria-label="نظام المالية"
+        title="نظام المالية"
+        style={{
+          position: "fixed",
+          top: 18,
+          left: 14,
+          width: 46,
+          height: 46,
+          borderRadius: "50%",
+          background: "radial-gradient(circle at 35% 30%, rgba(49,230,215,0.28), rgba(10,22,34,0.96))",
+          border: `1px solid ${C.hairline}`,
+          boxShadow: C.glow,
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 0,
+          zIndex: 1500,
+        }}
+      >
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={C.primary} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 8v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2H5a2 2 0 0 1-2-2Z" />
+          <path d="M3 8a2 2 0 0 1 2-2h11" />
+          <circle cx="16.5" cy="13" r="1.35" fill={C.primary} stroke="none" />
+        </svg>
+      </button>
+
       {/* Header */}
       <div style={{
         background: "radial-gradient(circle at 50% 0%, rgba(49,230,215,0.12), transparent 60%), linear-gradient(160deg, #04121F, #02070B 72%)",
@@ -469,8 +495,9 @@ export default function AmbitionMap() {
           </div>
         )}
       </div>
-      </>
-      )}
+
+      {/* Bottom Sheet النظام المالي */}
+      <FinanceSheet open={showFinance} finance={finance} onClose={() => setShowFinance(false)} logo={LOGO} />
     </div>
   );
 }
