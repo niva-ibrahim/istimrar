@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { C, FONT_STACK, FIN } from "./theme";
+import { subscribeSync, pushSync, genSyncCode } from "./firebaseSync";
 import {
   FINANCE,
   computeSteps,
@@ -50,6 +51,107 @@ export function useFinance() {
       window.removeEventListener("focus", check);
     };
   }, []);
+
+  // ============ المزامنة السحابية (Firebase) ============
+  const SYNC_KEY = "istimrar_sync_id";
+  const STAMP_KEY = "istimrar_sync_stamp";
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const [syncCode, setSyncCode] = useState(() => {
+    try { return localStorage.getItem(SYNC_KEY) || ""; } catch { return ""; }
+  });
+  const [syncStatus, setSyncStatus] = useState("off"); // off | connecting | live | error
+  const syncCodeRef = useRef(syncCode);
+  syncCodeRef.current = syncCode;
+  const applyingRemote = useRef(false);
+  const localStamp = useRef((() => { try { return Number(localStorage.getItem(STAMP_KEY)) || 0; } catch { return 0; } })());
+  const readyToPush = useRef(false);
+  const pushTimer = useRef(null);
+
+  const persistStamp = (t) => {
+    localStamp.current = t;
+    try { localStorage.setItem(STAMP_KEY, String(t)); } catch {}
+  };
+  const buildPayload = (s) => ({
+    commitments: s.commitments || [],
+    dailyExpenses: s.dailyExpenses || [],
+    emergencyExpenses: s.emergencyExpenses || [],
+    history: s.history || [],
+    salaryStepsExpanded: !!s.salaryStepsExpanded,
+    lastReset: s.lastReset || todayKey(),
+  });
+  const doPush = (stamp) => {
+    const code = syncCodeRef.current;
+    if (!code) return;
+    const t = stamp || Date.now();
+    persistStamp(t);
+    pushSync(code, { ...buildPayload(stateRef.current), updatedAt: t })
+      .then(() => setSyncStatus("live"))
+      .catch(() => setSyncStatus("error"));
+  };
+
+  // الاشتراك في المزامنة عند وجود رمز
+  useEffect(() => {
+    if (!syncCode) { setSyncStatus("off"); readyToPush.current = false; return; }
+    setSyncStatus("connecting");
+    readyToPush.current = false;
+    let unsub;
+    try {
+      unsub = subscribeSync(
+        syncCode,
+        (data, meta) => {
+          if (meta && meta.hasPendingWrites) return; // تجاهل صدى كتابتنا
+          const remoteStamp = data && typeof data.updatedAt === "number" ? data.updatedAt : 0;
+          if (remoteStamp > localStamp.current) {
+            applyingRemote.current = true;
+            persistStamp(remoteStamp);
+            setState((prev) => rolloverIfNeeded({ ...prev, ...buildPayload(data) }));
+          } else if (localStamp.current > remoteStamp) {
+            doPush(localStamp.current); // بياناتنا أحدث (أو المستند غير موجود) → ارفعها
+          }
+          readyToPush.current = true;
+          setSyncStatus("live");
+        },
+        () => setSyncStatus("error")
+      );
+    } catch {
+      setSyncStatus("error");
+    }
+    return () => unsub && unsub();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [syncCode]);
+
+  // دفع التغييرات المحلية (debounce)
+  useEffect(() => {
+    if (!syncCode) return;
+    if (applyingRemote.current) { applyingRemote.current = false; return; }
+    if (!readyToPush.current) return;
+    const stamp = Date.now();
+    persistStamp(stamp);
+    if (pushTimer.current) clearTimeout(pushTimer.current);
+    pushTimer.current = setTimeout(() => doPush(stamp), 600);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.commitments, state.dailyExpenses, state.emergencyExpenses, state.history, state.salaryStepsExpanded, state.lastReset]);
+
+  const enableSync = () => {
+    const code = genSyncCode();
+    try { localStorage.setItem(SYNC_KEY, code); } catch {}
+    persistStamp(Date.now()); // بياناتنا الحالية هي الأحدث → ستُرفع
+    setSyncCode(code);
+  };
+  const linkSync = (code) => {
+    const c = String(code || "").trim();
+    if (!c) return false;
+    try { localStorage.setItem(SYNC_KEY, c); } catch {}
+    persistStamp(0); // نتبنّى بيانات السحابة
+    setSyncCode(c);
+    return true;
+  };
+  const disableSync = () => {
+    try { localStorage.removeItem(SYNC_KEY); } catch {}
+    setSyncCode("");
+    setSyncStatus("off");
+  };
 
   const commitments = state.commitments || [];
   const fixedTotal = sumAmounts(commitments);
@@ -178,6 +280,11 @@ export function useFinance() {
     setSalaryStepsExpanded,
     exportState,
     importState,
+    syncCode,
+    syncStatus,
+    enableSync,
+    linkSync,
+    disableSync,
   };
 }
 
@@ -417,6 +524,71 @@ function CommitmentsSection({ commitments, fixedTotal, addCommitment, updateComm
   );
 }
 
+// القسم — المزامنة السحابية بين الأجهزة
+function SyncSection({ syncCode, syncStatus, enableSync, linkSync, disableSync, onToast }) {
+  const [codeInput, setCodeInput] = useState("");
+  const [copied, setCopied] = useState(false);
+  const statusMap = {
+    off: { text: "غير مفعّلة", color: C.textMuted },
+    connecting: { text: "جارٍ الاتصال…", color: FIN.warning },
+    live: { text: "متصل ✓", color: FIN.success },
+    error: { text: "تعذّر الاتصال", color: FIN.danger },
+  };
+  const st = statusMap[syncStatus] || statusMap.off;
+
+  const copyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(syncCode);
+      setCopied(true);
+      onToast && onToast("تم نسخ الرمز ✓");
+      setTimeout(() => setCopied(false), 1500);
+    } catch { /* الحافظة غير متاحة */ }
+  };
+  const onLink = () => {
+    if (linkSync(codeInput)) { onToast && onToast("تم الربط ✓"); setCodeInput(""); }
+  };
+
+  return (
+    <div style={sectionCard}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, gap: 10 }}>
+        <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: C.text }}>☁️ المزامنة بين الأجهزة</h2>
+        {syncCode && (
+          <span style={{ fontSize: 12, fontWeight: 700, color: st.color, whiteSpace: "nowrap" }}>● {st.text}</span>
+        )}
+      </div>
+
+      {!syncCode ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <p style={{ margin: 0, fontSize: 13, color: C.textMuted, lineHeight: 1.7 }}>
+            فعّل المزامنة على هذا الجهاز لإنشاء رمز، أو الصق رمزاً من جهاز آخر لربطهما. أي تعديل يظهر على كل الأجهزة مباشرة.
+          </p>
+          <PrimaryButton onClick={enableSync}>تفعيل المزامنة على هذا الجهاز</PrimaryButton>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, color: C.textMuted, fontSize: 12 }}>
+            <span style={{ flex: 1, height: 1, background: C.borderSoft }} /> أو لديك رمز؟ <span style={{ flex: 1, height: 1, background: C.borderSoft }} />
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <input value={codeInput} onChange={(e) => setCodeInput(e.target.value)} placeholder="الصق رمز المزامنة" style={{ ...inputStyle, direction: "ltr", textAlign: "left" }} />
+            <PrimaryButton onClick={onLink} color={FIN.info}>ربط</PrimaryButton>
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <p style={{ margin: 0, fontSize: 13, color: C.textMuted, lineHeight: 1.7 }}>
+            على جهازك الآخر: افتح التطبيق ← قسم المزامنة ← والصق هذا الرمز في خانة «الصق رمز المزامنة».
+          </p>
+          <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
+            <div style={{ flex: 1, minWidth: 0, background: "rgba(255,255,255,0.05)", border: `1px solid ${C.border}`, borderRadius: 12, padding: "12px 14px", fontFamily: "monospace", fontSize: 13, color: C.primary, wordBreak: "break-all", direction: "ltr", textAlign: "left" }}>{syncCode}</div>
+            <PrimaryButton onClick={copyCode}>{copied ? "✓" : "نسخ"}</PrimaryButton>
+          </div>
+          <button onClick={disableSync} style={{ background: "transparent", border: `1px solid ${C.border}`, color: C.textSoft, borderRadius: 12, padding: "11px", fontFamily: FONT_STACK, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+            إيقاف المزامنة على هذا الجهاز
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ============ Bottom Sheet يصعد من الأسفل (300ms) ============
 export function FinanceSheet({ open, finance, onClose, logo }) {
   const [mounted, setMounted] = useState(open);
@@ -452,7 +624,7 @@ export function FinanceSheet({ open, finance, onClose, logo }) {
 
 // ============ صفحة النظام المالي الكاملة ============
 export function FinancePage({ finance, onBack, logo }) {
-  const { steps, dailyLimit, todayExpense, remainingToday, availableBalance, status, monthDays, monthlyDailyTotal, monthlyEmergencyTotal, monthlyTotal, commitments, fixedTotal, salaryStepsExpanded, dailyExpenses, emergencyExpenses, addDaily, resetDaily, addEmergency, removeEmergency, removeDaily, addCommitment, updateCommitment, removeCommitment, setSalaryStepsExpanded, exportState, importState } = finance;
+  const { steps, dailyLimit, todayExpense, remainingToday, availableBalance, status, monthDays, monthlyDailyTotal, monthlyEmergencyTotal, monthlyTotal, commitments, fixedTotal, salaryStepsExpanded, dailyExpenses, emergencyExpenses, addDaily, resetDaily, addEmergency, removeEmergency, removeDaily, addCommitment, updateCommitment, removeCommitment, setSalaryStepsExpanded, exportState, importState, syncCode, syncStatus, enableSync, linkSync, disableSync } = finance;
 
   const todayLabel = (() => {
     try {
@@ -731,6 +903,16 @@ export function FinancePage({ finance, onBack, logo }) {
           </div>
         )}
       </div>
+
+      {/* القسم: المزامنة السحابية بين الأجهزة */}
+      <SyncSection
+        syncCode={syncCode}
+        syncStatus={syncStatus}
+        enableSync={enableSync}
+        linkSync={linkSync}
+        disableSync={disableSync}
+        onToast={showToast}
+      />
 
       {/* القسم: النسخ الاحتياطي */}
       <div style={sectionCard}>
