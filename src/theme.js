@@ -20,7 +20,32 @@ export const C = {
   hairline: "var(--color-hairline, rgba(49,230,215,0.14))",
   gradient: "var(--gradient-brand, linear-gradient(90deg,#0B2A4A,#123A5C,#1E7FA8,#24B5C0,#31E6D7))",
   glow: "var(--glow, 0 0 40px rgba(49,230,215,0.18))",
+  // أسطح ولمسات تتبدّل مع الثيم
+  inputBg: "var(--input-bg, rgba(255,255,255,0.05))",
+  trackBg: "var(--track-bg, rgba(255,255,255,0.08))",
+  overlay1: "var(--overlay-1, rgba(255,255,255,0.04))",
+  tint: "var(--tint-primary, rgba(49,230,215,0.12))",
+  onPrimary: "var(--on-primary, #02070B)",
+  gradHeader: "var(--grad-header)",
+  gradHero: "var(--grad-hero)",
+  gradWidget: "var(--grad-widget)",
+  gradFab: "var(--grad-fab)",
 };
+
+// نص ثابت فوق تدرّج العلامة (قابل للقراءة في الثيمين)
+export const ON_GRADIENT = "#04121F";
+
+// إدارة الثيم (داكن/فاتح) عبر سمة data-theme على الجذر + التخزين المحلي
+export const THEME_KEY = "istimrar_theme";
+export function applyTheme(t) {
+  try { document.documentElement.setAttribute("data-theme", t === "light" ? "light" : "dark"); } catch {}
+}
+export function loadTheme() {
+  try { return localStorage.getItem(THEME_KEY) === "light" ? "light" : "dark"; } catch { return "dark"; }
+}
+export function saveTheme(t) {
+  try { localStorage.setItem(THEME_KEY, t); } catch {}
+}
 
 // ألوان حالة النظام المالي (نجاح/معلومة/تحذير/خطر)
 export const FIN = {

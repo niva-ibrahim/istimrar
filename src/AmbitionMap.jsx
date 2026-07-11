@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { C, FONT_STACK } from "./theme";
+import { C, FONT_STACK, ON_GRADIENT, applyTheme, loadTheme, saveTheme } from "./theme";
 import { useFinance, FinanceWidget, FinanceSheet } from "./Finance.jsx";
 
 // مسار الأصول يتبع base في vite.config.js (مثال: "/istimrar/")
@@ -134,6 +134,12 @@ export default function AmbitionMap() {
   const [showFinance, setShowFinance] = useState(false);
   const toastTimer = useRef(null);
   const finance = useFinance();
+  const [theme, setTheme] = useState(() => loadTheme());
+
+  useEffect(() => {
+    applyTheme(theme);
+    saveTheme(theme);
+  }, [theme]);
 
   useEffect(() => {
     const saved = localStorage.getItem("ambition_checks");
@@ -207,7 +213,7 @@ export default function AmbitionMap() {
           width: 46,
           height: 46,
           borderRadius: "50%",
-          background: "radial-gradient(circle at 35% 30%, rgba(49,230,215,0.28), rgba(10,22,34,0.96))",
+          background: C.gradFab,
           border: `1px solid ${C.hairline}`,
           boxShadow: C.glow,
           cursor: "pointer",
@@ -218,16 +224,43 @@ export default function AmbitionMap() {
           zIndex: 1500,
         }}
       >
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={C.primary} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={C.primary} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M3 8v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2H5a2 2 0 0 1-2-2Z" />
           <path d="M3 8a2 2 0 0 1 2-2h11" />
           <circle cx="16.5" cy="13" r="1.35" fill={C.primary} stroke="none" />
         </svg>
       </button>
 
+      {/* زر تبديل الثيم (داكن/فاتح) — بجانب أيقونة المالية */}
+      <button
+        onClick={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
+        aria-label="تبديل مظهر التطبيق"
+        title={theme === "light" ? "التحويل للوضع الداكن" : "التحويل للوضع الفاتح"}
+        style={{
+          position: "fixed",
+          top: 18,
+          left: 68,
+          width: 46,
+          height: 46,
+          borderRadius: "50%",
+          background: C.card,
+          border: `1px solid ${C.hairline}`,
+          boxShadow: C.glow,
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 0,
+          fontSize: 20,
+          zIndex: 1500,
+        }}
+      >
+        {theme === "light" ? "🌙" : "☀️"}
+      </button>
+
       {/* Header */}
       <div style={{
-        background: "radial-gradient(circle at 50% 0%, rgba(49,230,215,0.12), transparent 60%), linear-gradient(160deg, #04121F, #02070B 72%)",
+        background: C.gradHeader,
         padding: "26px 20px 22px",
         borderBottom: `1px solid ${C.borderSoft}`,
       }}>
@@ -258,7 +291,7 @@ export default function AmbitionMap() {
                   padding: "10px 4px",
                   border: `1px solid ${active ? C.hairline : "transparent"}`,
                   borderRadius: 999,
-                  background: active ? "rgba(49,230,215,0.12)" : "rgba(255,255,255,0.04)",
+                  background: active ? C.tint : C.overlay1,
                   color: active ? C.primary : C.textMuted,
                   fontFamily: FONT_STACK,
                   fontWeight: active ? 700 : 500,
@@ -318,7 +351,7 @@ export default function AmbitionMap() {
               borderRadius: 26,
               padding: "22px 20px",
               color: C.text,
-              background: "radial-gradient(circle at 15% 0%, rgba(49,230,215,0.14), transparent 55%), linear-gradient(160deg, #081826, #02070B)",
+              background: C.gradHero,
               border: `1px solid ${C.hairline}`,
             }}>
               <div style={{ marginBottom: 8 }}><Eyebrow>◈ النجمة الشمالية — ٢٠٣٠</Eyebrow></div>
@@ -376,7 +409,7 @@ export default function AmbitionMap() {
                   borderRadius: 26,
                   padding: "22px 20px",
                   color: C.text,
-                  background: "radial-gradient(circle at 15% 0%, rgba(49,230,215,0.14), transparent 55%), linear-gradient(160deg, #081826, #02070B)",
+                  background: C.gradHero,
                   border: `1px solid ${C.hairline}`,
                 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
@@ -453,7 +486,7 @@ export default function AmbitionMap() {
                             marginTop: 1,
                             transition: "all 0.2s",
                           }}>
-                            {done && <span style={{ color: C.bg, fontSize: 13, lineHeight: 1, fontWeight: 800 }}>✓</span>}
+                            {done && <span style={{ color: C.onPrimary, fontSize: 13, lineHeight: 1, fontWeight: 800 }}>✓</span>}
                           </div>
                           <p style={{
                             margin: 0,
@@ -484,7 +517,7 @@ export default function AmbitionMap() {
                 fontFamily: FONT_STACK,
                 fontSize: 15,
                 fontWeight: 800,
-                color: C.bg,
+                color: ON_GRADIENT,
                 cursor: "pointer",
                 boxShadow: C.glow,
                 marginTop: 4,

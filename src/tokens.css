@@ -1,32 +1,31 @@
 /* =========================================================
    tokens.css — هوية ابراهيم العريفي (Design Tokens)
-   ---------------------------------------------------------
-   مستخرجة من دليل الهوية: قاعدة داكنة عميقة، وتدرّج
-   أزرق–فيروزي من قلب الشعار. المصدر الوحيد لألوان الواجهة.
+   ثيم داكن افتراضي + ثيم فاتح عبر :root[data-theme="light"].
+   كل ألوان الواجهة تُقرأ من هذه المتغيّرات فيتبدّل الثيم فوراً.
    ========================================================= */
 :root {
   /* الخلفيات */
-  --color-bg: #02070B;          /* حبر الليل — الخلفية الأساسية */
-  --color-bg-deep: #04121F;     /* عمق التدرّج */
-  --color-card: #0A1622;        /* أسطح البطاقات */
-  --color-card-2: #0B2A4A;      /* الأزرق العميق — أسطح ثانوية */
+  --color-bg: #02070B;
+  --color-bg-deep: #04121F;
+  --color-card: #0A1622;
+  --color-card-2: #0B2A4A;
 
   /* الهوية (الفيروزي) */
-  --color-primary: #31E6D7;     /* الفيروزي المميّز */
+  --color-primary: #31E6D7;
   --color-primary-hover: #5EF0E4;
 
   /* تدرّج الشعار الثانوي */
-  --color-ocean: #123A5C;       /* أزرق محيطي */
-  --color-steel: #1E7FA8;       /* أزرق فولاذي */
-  --color-teal: #24B5C0;        /* تركوازي */
+  --color-ocean: #123A5C;
+  --color-steel: #1E7FA8;
+  --color-teal: #24B5C0;
 
   /* النصوص */
-  --color-text: #EAF6F7;        /* ضباب فاتح — العناوين */
-  --color-text-soft: #B9E9EC;   /* فيروزي فاتح — نص مميّز */
-  --color-text-muted: #8FA6B2;  /* رمادي دخاني — نص ثانوي */
+  --color-text: #EAF6F7;
+  --color-text-soft: #B9E9EC;
+  --color-text-muted: #8FA6B2;
 
   /* الحدود والفواصل */
-  --color-border: #1B2A36;      /* رمادي داكن */
+  --color-border: #1B2A36;
   --color-border-soft: rgba(255, 255, 255, 0.06);
   --color-hairline: rgba(49, 230, 215, 0.14);
 
@@ -34,7 +33,57 @@
   --color-success: #31E6D7;
   --color-accent-warm: #FF8A80;
 
-  /* التدرّج الرسمي — الأشرطة والإطارات ولمسات التمييز */
+  /* أسطح ولمسات */
+  --input-bg: rgba(255, 255, 255, 0.05);
+  --track-bg: rgba(255, 255, 255, 0.08);
+  --overlay-1: rgba(255, 255, 255, 0.04);
+  --tint-primary: rgba(49, 230, 215, 0.12);
+  --on-primary: #02070B; /* لون النص فوق التعبئة الفيروزية */
+
+  /* تدرّجات زخرفية */
   --gradient-brand: linear-gradient(90deg, #0B2A4A, #123A5C, #1E7FA8, #24B5C0, #31E6D7);
   --glow: 0 0 40px rgba(49, 230, 215, 0.18);
+  --grad-header: radial-gradient(circle at 50% 0%, rgba(49, 230, 215, 0.12), transparent 60%), linear-gradient(160deg, #04121F, #02070B 72%);
+  --grad-hero: radial-gradient(circle at 15% 0%, rgba(49, 230, 215, 0.14), transparent 55%), linear-gradient(160deg, #081826, #02070B);
+  --grad-widget: radial-gradient(circle at 12% 0%, rgba(49, 230, 215, 0.10), transparent 55%), #0A1622;
+  --grad-fab: radial-gradient(circle at 35% 30%, rgba(49, 230, 215, 0.28), rgba(10, 22, 34, 0.96));
+}
+
+/* ================= الثيم الفاتح ================= */
+:root[data-theme="light"] {
+  --color-bg: #F2F7F8;
+  --color-bg-deep: #E8F1F2;
+  --color-card: #FFFFFF;
+  --color-card-2: #E6F4F4;
+
+  --color-primary: #0E9C90;
+  --color-primary-hover: #0AB5A6;
+
+  --color-ocean: #123A5C;
+  --color-steel: #1E7FA8;
+  --color-teal: #0E9C90;
+
+  --color-text: #0A1622;
+  --color-text-soft: #274A55;
+  --color-text-muted: #5C7481;
+
+  --color-border: #D5E0E4;
+  --color-border-soft: rgba(0, 0, 0, 0.08);
+  --color-hairline: rgba(14, 156, 144, 0.25);
+
+  --color-success: #0E9C90;
+  --color-accent-warm: #E5533D;
+
+  --input-bg: rgba(0, 0, 0, 0.04);
+  --track-bg: rgba(0, 0, 0, 0.09);
+  --overlay-1: rgba(0, 0, 0, 0.035);
+  --tint-primary: rgba(14, 156, 144, 0.12);
+  --on-primary: #FFFFFF;
+
+  --gradient-brand: linear-gradient(90deg, #0B2A4A, #123A5C, #1E7FA8, #24B5C0, #31E6D7);
+  --glow: 0 0 30px rgba(14, 156, 144, 0.15);
+  --grad-header: radial-gradient(circle at 50% 0%, rgba(14, 156, 144, 0.10), transparent 60%), linear-gradient(160deg, #E8F3F4, #F2F7F8 72%);
+  --grad-hero: radial-gradient(circle at 15% 0%, rgba(14, 156, 144, 0.12), transparent 55%), linear-gradient(160deg, #E6F1F2, #FFFFFF);
+  --grad-widget: radial-gradient(circle at 12% 0%, rgba(14, 156, 144, 0.08), transparent 55%), #FFFFFF;
+  --grad-fab: radial-gradient(circle at 35% 30%, rgba(14, 156, 144, 0.20), #FFFFFF);
 }

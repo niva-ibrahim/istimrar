@@ -6,8 +6,15 @@
     <title>خريطة الطموح — استمرار</title>
     <meta name="theme-color" content="#02070B" />
     <style>
-      html, body { margin: 0; background: #02070B; }
+      html, body { margin: 0; background: var(--color-bg, #02070B); }
     </style>
+    <script>
+      // ضبط الثيم مبكراً قبل الرسم لتفادي وميض اللون
+      try {
+        var t = localStorage.getItem("istimrar_theme") === "light" ? "light" : "dark";
+        document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>
