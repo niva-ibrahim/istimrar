@@ -77,6 +77,7 @@ export function useFinance() {
     dailyExpenses: s.dailyExpenses || [],
     emergencyExpenses: s.emergencyExpenses || [],
     history: s.history || [],
+    monthlyIncome: s.monthlyIncome || FINANCE.monthlyIncome,
     dailyLimit: s.dailyLimit || FINANCE.dailyLimit,
     salaryStepsExpanded: !!s.salaryStepsExpanded,
     lastReset: s.lastReset || todayKey(),
@@ -132,7 +133,7 @@ export function useFinance() {
     if (pushTimer.current) clearTimeout(pushTimer.current);
     pushTimer.current = setTimeout(() => doPush(stamp), 600);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.commitments, state.dailyExpenses, state.emergencyExpenses, state.history, state.dailyLimit, state.salaryStepsExpanded, state.lastReset]);
+  }, [state.commitments, state.dailyExpenses, state.emergencyExpenses, state.history, state.monthlyIncome, state.dailyLimit, state.salaryStepsExpanded, state.lastReset]);
 
   const enableSync = () => {
     const code = genSyncCode();
@@ -157,7 +158,8 @@ export function useFinance() {
   const commitments = state.commitments || [];
   const fixedTotal = sumAmounts(commitments);
   const dailyLimit = state.dailyLimit || FINANCE.dailyLimit;
-  const steps = computeSteps(fixedTotal, dailyLimit);
+  const monthlyIncome = state.monthlyIncome || FINANCE.monthlyIncome;
+  const steps = computeSteps(fixedTotal, dailyLimit, monthlyIncome);
   const todayExpense = sumAmounts(state.dailyExpenses);
   const remainingToday = round2(dailyLimit - todayExpense);
   const emergencyTotal = sumAmounts(state.emergencyExpenses);
@@ -222,6 +224,14 @@ export function useFinance() {
   const removeCommitment = (id) =>
     setState((s) => ({ ...s, commitments: (s.commitments || []).filter((c) => c.id !== id) }));
 
+  // تعديل الراتب الشهري — يعيد حساب الخطوات والرصيد فوراً
+  const setMonthlyIncome = (n) => {
+    const v = round2(n);
+    if (!(v > 0)) return false;
+    setState((s) => ({ ...s, monthlyIncome: v }));
+    return true;
+  };
+
   // تعديل الحد الآمن اليومي — يعيد حساب الخطوات والرصيد فوراً
   const setDailyLimit = (n) => {
     const v = round2(n);
@@ -243,6 +253,7 @@ export function useFinance() {
     dailyExpenses: state.dailyExpenses,
     emergencyExpenses: state.emergencyExpenses,
     history: state.history || [],
+    monthlyIncome: state.monthlyIncome || FINANCE.monthlyIncome,
     dailyLimit: state.dailyLimit || FINANCE.dailyLimit,
     salaryStepsExpanded: !!state.salaryStepsExpanded,
     lastReset: state.lastReset,
@@ -256,6 +267,7 @@ export function useFinance() {
         dailyExpenses: Array.isArray(obj.dailyExpenses) ? obj.dailyExpenses : [],
         emergencyExpenses: Array.isArray(obj.emergencyExpenses) ? obj.emergencyExpenses : [],
         history: Array.isArray(obj.history) ? obj.history : [],
+        monthlyIncome: Number.isFinite(obj.monthlyIncome) && obj.monthlyIncome > 0 ? obj.monthlyIncome : (s.monthlyIncome || FINANCE.monthlyIncome),
         dailyLimit: Number.isFinite(obj.dailyLimit) && obj.dailyLimit > 0 ? obj.dailyLimit : (s.dailyLimit || FINANCE.dailyLimit),
         salaryStepsExpanded: !!obj.salaryStepsExpanded,
         lastReset: obj.lastReset || todayKey(),
@@ -266,6 +278,8 @@ export function useFinance() {
 
   return {
     steps,
+    monthlyIncome,
+    setMonthlyIncome,
     dailyLimit,
     setDailyLimit,
     todayExpense,
@@ -633,7 +647,7 @@ export function FinanceSheet({ open, finance, onClose, logo }) {
 
 // ============ صفحة النظام المالي الكاملة ============
 export function FinancePage({ finance, onBack, logo }) {
-  const { steps, dailyLimit, setDailyLimit, todayExpense, remainingToday, availableBalance, status, monthDays, monthlyDailyTotal, monthlyEmergencyTotal, monthlyTotal, commitments, fixedTotal, dailyExpenses, emergencyExpenses, addDaily, resetDaily, addEmergency, removeEmergency, removeDaily, addCommitment, updateCommitment, removeCommitment, exportState, importState, syncCode, syncStatus, enableSync, linkSync, disableSync } = finance;
+  const { steps, monthlyIncome, setMonthlyIncome, dailyLimit, setDailyLimit, todayExpense, remainingToday, availableBalance, status, monthDays, monthlyDailyTotal, monthlyEmergencyTotal, monthlyTotal, commitments, fixedTotal, dailyExpenses, emergencyExpenses, addDaily, resetDaily, addEmergency, removeEmergency, removeDaily, addCommitment, updateCommitment, removeCommitment, exportState, importState, syncCode, syncStatus, enableSync, linkSync, disableSync } = finance;
 
   const todayLabel = (() => {
     try {
@@ -677,6 +691,19 @@ export function FinancePage({ finance, onBack, logo }) {
     setDailyLimit(n);
     setEditingLimit(false);
     showToast("تم تحديث الحد الآمن ✓");
+  };
+
+  // تعديل الراتب الشهري
+  const [editingIncome, setEditingIncome] = useState(false);
+  const [incomeInput, setIncomeInput] = useState("");
+  const [incomeMsg, setIncomeMsg] = useState(null);
+  const saveIncome = () => {
+    const n = parseNum(incomeInput);
+    if (!(n > 0)) { setIncomeMsg({ type: "danger", text: "أدخل راتباً صحيحاً أكبر من صفر" }); return; }
+    setMonthlyIncome(n);
+    setEditingIncome(false);
+    setIncomeMsg(null);
+    showToast("تم تحديث الراتب ✓");
   };
 
   const showToast = (text) => {
@@ -758,11 +785,14 @@ export function FinancePage({ finance, onBack, logo }) {
     e.target.value = ""; // للسماح باستيراد نفس الملف مجدداً
   };
 
-  const StepRow = ({ label, value, formula, final }) => (
+  const StepRow = ({ label, value, formula, final, onEdit }) => (
     <div style={{ display: "flex", flexDirection: "column", gap: 4, paddingRight: 14, borderRight: `2px solid ${final ? FIN.success : C.hairline}` }}>
       <span style={{ fontSize: 13, color: final ? FIN.success : C.primary, fontWeight: 700 }}>{label}</span>
       {formula && <span style={{ fontSize: 13, color: C.textMuted }}>{formula}</span>}
-      <span style={{ fontSize: final ? 22 : 18, fontWeight: 800, color: C.text }}>{value} <span style={{ fontSize: 13, fontWeight: 600, color: C.textMuted }}>ر.س</span></span>
+      <span style={{ fontSize: final ? 22 : 18, fontWeight: 800, color: C.text, display: "inline-flex", alignItems: "center", gap: 8 }}>
+        {value} <span style={{ fontSize: 13, fontWeight: 600, color: C.textMuted }}>ر.س</span>
+        {onEdit && <button onClick={onEdit} aria-label="تعديل الراتب" style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: 14, padding: 0, lineHeight: 1 }}>✏️</button>}
+      </span>
     </div>
   );
 
@@ -812,7 +842,17 @@ export function FinancePage({ finance, onBack, logo }) {
       {/* القسم B: خطوات الحساب (قابل للطي — مغلق افتراضياً) */}
       <Section title="🧮 خطوات حساب الراتب" open={!!openMap.steps} onToggle={() => toggleSection("steps")}>
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <StepRow label="الخطوة ١: الراتب الكامل" value={fmt(steps.income)} />
+          {editingIncome && (
+            <div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input value={incomeInput} onChange={(e) => setIncomeInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && saveIncome()} inputMode="decimal" placeholder="الراتب الشهري" style={{ ...inputStyle, padding: "9px 11px", fontSize: 14 }} />
+                <PrimaryButton onClick={saveIncome}>حفظ</PrimaryButton>
+                <button onClick={() => { setEditingIncome(false); setIncomeMsg(null); }} aria-label="إلغاء" style={{ background: "transparent", border: "none", color: FIN.danger, cursor: "pointer", fontSize: 19, fontWeight: 800 }}>✗</button>
+              </div>
+              <Msg msg={incomeMsg} />
+            </div>
+          )}
+          <StepRow label="الخطوة ١: الراتب الكامل" value={fmt(steps.income)} onEdit={() => { setIncomeInput(String(monthlyIncome)); setEditingIncome(true); setIncomeMsg(null); }} />
           <StepRow label="الخطوة ٢: بعد الالتزامات" formula={`${fmt(steps.income)} − ${fmt(steps.fixedTotal)}`} value={fmt(steps.afterCommitments)} />
           <StepRow label="الخطوة ٣: بعد المصروفات اليومية" formula={`${dailyLimit} × ٣٠ = ${fmt(steps.monthlyDailyExpenses)}  ·  ${fmt(steps.afterCommitments)} − ${fmt(steps.monthlyDailyExpenses)}`} value={fmt(steps.baseAvailable)} />
           <StepRow label="✅ الرصيد النهائي (للادخار والطوارئ)" value={fmt(steps.baseAvailable)} final />

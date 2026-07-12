@@ -37,8 +37,8 @@ export const DEFAULT_TOTAL = round2(
 
 // محرك الحسابات — الخطوات الأربع. يعتمد على إجمالي الالتزامات الحالي
 // والحد الآمن اليومي (كلاهما يُمرَّر من الحالة) فيُعاد الحساب فوراً عند أي تعديل.
-export function computeSteps(fixedTotal, dailyLimit) {
-  const income = FINANCE.monthlyIncome;                                 // 13500
+export function computeSteps(fixedTotal, dailyLimit, monthlyIncome) {
+  const income = monthlyIncome != null ? monthlyIncome : FINANCE.monthlyIncome; // 13500
   const total = round2(fixedTotal != null ? fixedTotal : DEFAULT_TOTAL); // 7773.33
   const limit = dailyLimit != null ? dailyLimit : FINANCE.dailyLimit;    // 50
   const afterCommitments = round2(income - total);                      // 5726.67
@@ -119,6 +119,7 @@ export function loadFinance() {
   data.history = data.history || [];
   // نبذر الالتزامات الافتراضية فقط إن لم تُضبط من قبل (لا نعيد بذرها لو أفرغها المستخدم)
   data.commitments = Array.isArray(data.commitments) ? data.commitments : DEFAULT_COMMITMENTS;
+  data.monthlyIncome = Number.isFinite(data.monthlyIncome) && data.monthlyIncome > 0 ? data.monthlyIncome : FINANCE.monthlyIncome;
   data.dailyLimit = Number.isFinite(data.dailyLimit) && data.dailyLimit > 0 ? data.dailyLimit : FINANCE.dailyLimit;
   data.salaryStepsExpanded = !!data.salaryStepsExpanded;
   if (!data.lastReset) data.lastReset = todayKey();
