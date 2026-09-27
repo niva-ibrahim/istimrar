@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { C, FONT_STACK, ON_GRADIENT, applyTheme, loadTheme, saveTheme } from "./theme";
+import { C, FONT_STACK, FIN, ON_GRADIENT, applyTheme, loadTheme, saveTheme } from "./theme";
 import { useFinance, FinanceWidget, FinanceSheet } from "./Finance.jsx";
 
 // مسار الأصول يتبع base في vite.config.js (مثال: "/istimrar/")
