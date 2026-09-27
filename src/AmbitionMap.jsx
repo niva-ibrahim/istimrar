@@ -263,7 +263,7 @@ export default function AmbitionMap() {
           <img
             src={LOGO}
             alt="الشعار"
-            style={{ width: 52, height: 52, filter: "drop-shadow(0 0 22px rgba(49,230,215,0.35))" }}
+            style={{ width: 52, height: 52, objectFit: "cover", borderRadius: "50%", filter: "drop-shadow(0 0 22px rgba(49,230,215,0.35))" }}
           />
           <div>
             <Eyebrow>خريطة الطموح</Eyebrow>
