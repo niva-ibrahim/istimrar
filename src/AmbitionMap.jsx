@@ -142,8 +142,21 @@ export default function AmbitionMap() {
   }, [theme]);
 
   useEffect(() => {
-    const saved = localStorage.getItem("ambition_checks");
-    if (saved) setChecked(JSON.parse(saved));
+    try {
+      const saved = localStorage.getItem("ambition_checks");
+      if (!saved) return;
+      const parsed = JSON.parse(saved);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
+      const validChecks = {};
+      dailyTasks.forEach(({ id }) => {
+        if (Object.prototype.hasOwnProperty.call(parsed, id)) validChecks[id] = Boolean(parsed[id]);
+      });
+      setChecked(validChecks);
+    } catch {
+      // بيانات تالفة أو تخزين غير متاح: تبدأ القائمة فارغة بدلاً من تعطّل التطبيق.
+      setChecked({});
+      try { localStorage.removeItem("ambition_checks"); } catch {}
+    }
   }, []);
 
   const showToast = () => {
@@ -462,7 +475,17 @@ export default function AmbitionMap() {
                       return (
                         <div
                           key={task.id}
+                          role="checkbox"
+                          aria-checked={!!done}
+                          aria-label={task.text}
+                          tabIndex={0}
                           onClick={() => toggleCheck(task.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              toggleCheck(task.id);
+                            }
+                          }}
                           style={{
                             display: "flex",
                             alignItems: "flex-start",
