@@ -697,6 +697,9 @@ export function FinancePage({ finance, onBack, logo }) {
   const [editingIncome, setEditingIncome] = useState(false);
   const [incomeInput, setIncomeInput] = useState("");
   const [incomeMsg, setIncomeMsg] = useState(null);
+  const [editingMonthlySpend, setEditingMonthlySpend] = useState(false);
+  const [monthlySpendInput, setMonthlySpendInput] = useState("");
+  const [monthlySpendMsg, setMonthlySpendMsg] = useState(null);
   const saveIncome = () => {
     const n = parseNum(incomeInput);
     if (!(n > 0)) { setIncomeMsg({ type: "danger", text: "أدخل راتباً صحيحاً أكبر من صفر" }); return; }
@@ -704,6 +707,16 @@ export function FinancePage({ finance, onBack, logo }) {
     setEditingIncome(false);
     setIncomeMsg(null);
     showToast("تم تحديث الراتب ✓");
+  };
+
+  const saveMonthlySpend = () => {
+    const n = parseNum(monthlySpendInput);
+    if (!(n > 0)) { setMonthlySpendMsg({ type: "danger", text: "أدخل مبلغاً صحيحاً أكبر من صفر" }); return; }
+    // حد الصرف اليومي يظل متوافقاً مع إجمالي الصرف الشهري على أساس ٣٠ يوماً.
+    setDailyLimit(round2(n / FINANCE.daysInMonth));
+    setEditingMonthlySpend(false);
+    setMonthlySpendMsg(null);
+    showToast("تم تحديث الصرف الشهري ✓");
   };
 
   const showToast = (text) => {
@@ -791,7 +804,7 @@ export function FinancePage({ finance, onBack, logo }) {
       {formula && <span style={{ fontSize: 13, color: C.textMuted }}>{formula}</span>}
       <span style={{ fontSize: final ? 22 : 18, fontWeight: 800, color: C.text, display: "inline-flex", alignItems: "center", gap: 8 }}>
         {value} <span style={{ fontSize: 13, fontWeight: 600, color: C.textMuted }}>ر.س</span>
-        {onEdit && <button onClick={onEdit} aria-label="تعديل الراتب" style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: 14, padding: 0, lineHeight: 1 }}>✏️</button>}
+        {onEdit && <button onClick={onEdit} aria-label="تعديل القيمة" title="تعديل" style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: 14, padding: 0, lineHeight: 1 }}>✏️</button>}
       </span>
     </div>
   );
@@ -854,7 +867,18 @@ export function FinancePage({ finance, onBack, logo }) {
           )}
           <StepRow label="الخطوة ١: الراتب الكامل" value={fmt(steps.income)} onEdit={() => { setIncomeInput(String(monthlyIncome)); setEditingIncome(true); setIncomeMsg(null); }} />
           <StepRow label="الخطوة ٢: بعد الالتزامات" formula={`${fmt(steps.income)} − ${fmt(steps.fixedTotal)}`} value={fmt(steps.afterCommitments)} />
-          <StepRow label="الخطوة ٣: بعد المصروفات اليومية" formula={`${dailyLimit} × ٣٠ = ${fmt(steps.monthlyDailyExpenses)}  ·  ${fmt(steps.afterCommitments)} − ${fmt(steps.monthlyDailyExpenses)}`} value={fmt(steps.baseAvailable)} />
+          {editingMonthlySpend && (
+            <div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input value={monthlySpendInput} onChange={(e) => setMonthlySpendInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && saveMonthlySpend()} inputMode="decimal" placeholder="الصرف الشهري" style={{ ...inputStyle, padding: "9px 11px", fontSize: 14 }} />
+                <PrimaryButton onClick={saveMonthlySpend}>حفظ</PrimaryButton>
+                <button onClick={() => { setEditingMonthlySpend(false); setMonthlySpendMsg(null); }} aria-label="إلغاء" style={{ background: "transparent", border: "none", color: FIN.danger, cursor: "pointer", fontSize: 19, fontWeight: 800 }}>✗</button>
+              </div>
+              <Msg msg={monthlySpendMsg} />
+              <div style={{ marginTop: 6, fontSize: 11, color: C.textMuted }}>يُحسب الحد اليومي تلقائياً بقسمة المبلغ على ٣٠ يوماً.</div>
+            </div>
+          )}
+          <StepRow label="الخطوة ٣: بعد المصروفات اليومية" formula={`${dailyLimit} × ٣٠ = ${fmt(steps.monthlyDailyExpenses)}  ·  ${fmt(steps.afterCommitments)} − ${fmt(steps.monthlyDailyExpenses)}`} value={fmt(steps.baseAvailable)} onEdit={() => { setMonthlySpendInput(String(steps.monthlyDailyExpenses)); setEditingMonthlySpend(true); setMonthlySpendMsg(null); }} />
           <StepRow label="✅ الرصيد النهائي (للادخار والطوارئ)" value={fmt(steps.baseAvailable)} final />
         </div>
       </Section>
