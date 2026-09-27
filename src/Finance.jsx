@@ -875,7 +875,7 @@ export function FinancePage({ finance, onBack, logo }) {
         <button onClick={onBack} style={{ background: C.inputBg, border: `1px solid ${C.border}`, color: C.text, borderRadius: 12, padding: "8px 14px", fontFamily: FONT_STACK, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
           → رجوع
         </button>
-        {logo && <img src={logo} alt="" style={{ width: 34, height: 34, objectFit: "cover", borderRadius: "50%", filter: "drop-shadow(0 0 16px rgba(49,230,215,0.35))" }} />}
+        {logo && <img src={logo} alt="" style={{ width: 34, height: 34, filter: "drop-shadow(0 0 16px rgba(49,230,215,0.35))" }} />}
         <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: C.text }}>💰 نظام المالية</h1>
       </div>
 
