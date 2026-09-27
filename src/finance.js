@@ -14,6 +14,45 @@ export function round2(n) {
   return Math.round((Number(n) || 0) * 100) / 100;
 }
 
+// المهام الافتراضية لقائمة الطموح.
+export const DEFAULT_TASKS = [
+  { id: "d1", text: "صلاة الفجر في وقتها", period: "daily" },
+  { id: "d2", text: "مراجعة حفظ القرآن ١٥ دقيقة", period: "daily" },
+  { id: "d3", text: "متابعة مهام تأسيس العلامة التجارية", period: "daily" },
+  { id: "d4", text: "٣٠ دقيقة تعلم (تسويق / إدارة / تجارة إلكترونية)", period: "daily" },
+  { id: "d5", text: "٣٠ دقيقة تعلّم إنجليزي", period: "daily" },
+  { id: "w1", text: "زيارة أو اتصال بالوالدين", period: "weekly" },
+  { id: "w2", text: "مراجعة مؤشرات العلامة التجارية", period: "weekly" },
+  { id: "w3", text: "تطبيق درس من الكورس على مشروع حقيقي", period: "weekly" },
+  { id: "m1", text: "تخصيص الصدقة الشهرية ومساعدة محتاج", period: "monthly" },
+  { id: "m2", text: "تقييم التقدم نحو الأهداف المهنية", period: "monthly" },
+  { id: "m3", text: "مراجعة الميزانية الشخصية والادخار", period: "monthly" },
+  { id: "m4", text: "تخصيص مبلغ ثابت للوالدين", period: "monthly" },
+];
+
+const TASK_PERIODS = new Set(["daily", "weekly", "monthly"]);
+
+export function normalizeTasks(tasks, fallback = DEFAULT_TASKS) {
+  const source = Array.isArray(tasks) ? tasks : fallback;
+  const seen = new Set();
+  return source.reduce((result, task) => {
+    const id = String(task?.id || "").trim();
+    const text = typeof task?.text === "string" ? task.text.trim() : "";
+    if (!id || !text || !TASK_PERIODS.has(task?.period) || seen.has(id)) return result;
+    seen.add(id);
+    result.push({ id, text, period: task.period });
+    return result;
+  }, []);
+}
+
+export function normalizeTaskChecks(checks, tasks) {
+  if (!checks || typeof checks !== "object" || Array.isArray(checks)) return {};
+  return (tasks || []).reduce((result, task) => {
+    if (Object.prototype.hasOwnProperty.call(checks, task.id)) result[task.id] = Boolean(checks[task.id]);
+    return result;
+  }, {});
+}
+
 // الالتزامات الشهرية الافتراضية — مصفوفة ديناميكية قابلة للإضافة/التعديل/الحذف.
 // (تُخزَّن في localStorage بعد أول تحميل، وتصبح مصدر الحساب.)
 export const DEFAULT_COMMITMENTS = [
@@ -119,6 +158,12 @@ export function loadFinance() {
   data.history = data.history || [];
   // نبذر الالتزامات الافتراضية فقط إن لم تُضبط من قبل (لا نعيد بذرها لو أفرغها المستخدم)
   data.commitments = Array.isArray(data.commitments) ? data.commitments : DEFAULT_COMMITMENTS;
+  data.tasks = normalizeTasks(Array.isArray(data.tasks) ? data.tasks : DEFAULT_TASKS);
+  let taskChecks = data.taskChecks;
+  if (!taskChecks || typeof taskChecks !== "object" || Array.isArray(taskChecks)) {
+    try { taskChecks = JSON.parse(localStorage.getItem("ambition_checks") || "{}"); } catch { taskChecks = {}; }
+  }
+  data.taskChecks = normalizeTaskChecks(taskChecks, data.tasks);
   data.monthlyIncome = Number.isFinite(data.monthlyIncome) && data.monthlyIncome > 0 ? data.monthlyIncome : FINANCE.monthlyIncome;
   data.dailyLimit = Number.isFinite(data.dailyLimit) && data.dailyLimit > 0 ? data.dailyLimit : FINANCE.dailyLimit;
   data.salaryStepsExpanded = !!data.salaryStepsExpanded;

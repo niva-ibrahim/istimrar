@@ -76,21 +76,6 @@ const roles = [
   },
 ];
 
-const dailyTasks = [
-  { id: "d1", text: "صلاة الفجر في وقتها", period: "daily" },
-  { id: "d2", text: "مراجعة حفظ القرآن ١٥ دقيقة", period: "daily" },
-  { id: "d3", text: "متابعة مهام تأسيس العلامة التجارية", period: "daily" },
-  { id: "d4", text: "٣٠ دقيقة تعلم (تسويق / إدارة / تجارة إلكترونية)", period: "daily" },
-  { id: "d5", text: "٣٠ دقيقة تعلّم إنجليزي", period: "daily" },
-  { id: "w1", text: "زيارة أو اتصال بالوالدين", period: "weekly" },
-  { id: "w2", text: "مراجعة مؤشرات العلامة التجارية", period: "weekly" },
-  { id: "w3", text: "تطبيق درس من الكورس على مشروع حقيقي", period: "weekly" },
-  { id: "m1", text: "تخصيص الصدقة الشهرية ومساعدة محتاج", period: "monthly" },
-  { id: "m2", text: "تقييم التقدم نحو الأهداف المهنية", period: "monthly" },
-  { id: "m3", text: "مراجعة الميزانية الشخصية والادخار", period: "monthly" },
-  { id: "m4", text: "تخصيص مبلغ ثابت للوالدين", period: "monthly" },
-];
-
 function getArabicDate() {
   const now = new Date();
   return now.toLocaleDateString("ar-SA-u-ca-islamic", {
@@ -129,11 +114,17 @@ const cardStyle = {
 
 export default function AmbitionMap() {
   const [activeTab, setActiveTab] = useState(0);
-  const [checked, setChecked] = useState({});
   const [toast, setToast] = useState(null);
+  const [addingTask, setAddingTask] = useState(false);
+  const [newTaskText, setNewTaskText] = useState("");
+  const [newTaskPeriod, setNewTaskPeriod] = useState("daily");
+  const [taskMsg, setTaskMsg] = useState(null);
+  const [deleteTaskId, setDeleteTaskId] = useState(null);
   const [showFinance, setShowFinance] = useState(false);
   const toastTimer = useRef(null);
   const finance = useFinance();
+  const dailyTasks = finance.tasks;
+  const checked = finance.taskChecks;
   const [theme, setTheme] = useState(() => loadTheme());
 
   useEffect(() => {
@@ -141,23 +132,7 @@ export default function AmbitionMap() {
     saveTheme(theme);
   }, [theme]);
 
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("ambition_checks");
-      if (!saved) return;
-      const parsed = JSON.parse(saved);
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
-      const validChecks = {};
-      dailyTasks.forEach(({ id }) => {
-        if (Object.prototype.hasOwnProperty.call(parsed, id)) validChecks[id] = Boolean(parsed[id]);
-      });
-      setChecked(validChecks);
-    } catch {
-      // بيانات تالفة أو تخزين غير متاح: تبدأ القائمة فارغة بدلاً من تعطّل التطبيق.
-      setChecked({});
-      try { localStorage.removeItem("ambition_checks"); } catch {}
-    }
-  }, []);
+
 
   const showToast = () => {
     const msg = TOAST_MESSAGES[Math.floor(Math.random() * TOAST_MESSAGES.length)];
@@ -168,21 +143,28 @@ export default function AmbitionMap() {
 
   const toggleCheck = (id) => {
     const isCompleting = !checked[id];
-    const updated = { ...checked, [id]: !checked[id] };
-    setChecked(updated);
-    try { localStorage.setItem("ambition_checks", JSON.stringify(updated)); } catch {}
+    finance.toggleTask(id);
     if (isCompleting) showToast();
   };
 
   const resetAll = () => {
-    setChecked({});
-    try { localStorage.removeItem("ambition_checks"); } catch {}
+    finance.resetTaskChecks();
+    setDeleteTaskId(null);
+  };
+
+  const addNewTask = () => {
+    const ok = finance.addTask(newTaskText, newTaskPeriod);
+    if (!ok) { setTaskMsg("اكتب اسم المهمة أولاً"); return; }
+    setNewTaskText("");
+    setNewTaskPeriod("daily");
+    setTaskMsg(null);
+    setAddingTask(false);
   };
 
   const getProgress = (period) => {
     const items = dailyTasks.filter((t) => t.period === period);
     const done = items.filter((t) => checked[t.id]).length;
-    return { done, total: items.length, pct: Math.round((done / items.length) * 100) };
+    return { done, total: items.length, pct: items.length ? Math.round((done / items.length) * 100) : 0 };
   };
 
   const tabs = ["الحلم الجريء", "أدواري", "قائمتي اليومية"];
@@ -414,6 +396,44 @@ export default function AmbitionMap() {
               <p style={{ margin: 0, fontSize: 13, color: C.primary, fontWeight: 600 }}>{getArabicDate()}</p>
             </div>
 
+            {/* إدارة المهام */}
+            <div style={{ ...cardStyle, padding: "18px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                <div>
+                  <p style={{ margin: 0, fontSize: 15, fontWeight: 800, color: C.text }}>مهامك وأهدافك</p>
+                  <p style={{ margin: "4px 0 0", fontSize: 12, color: C.textMuted }}>تُحفظ تلقائياً وتتم مزامنتها مع أجهزتك المرتبطة</p>
+                </div>
+                {!addingTask && (
+                  <button onClick={() => { setAddingTask(true); setTaskMsg(null); }} style={{ background: C.tint, border: `1px solid ${C.hairline}`, color: C.primary, borderRadius: 999, padding: "9px 14px", fontFamily: FONT_STACK, fontSize: 13, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+                    + إضافة مهمة
+                  </button>
+                )}
+              </div>
+              {addingTask && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 9, marginTop: 14 }}>
+                  <input
+                    autoFocus
+                    value={newTaskText}
+                    onChange={(e) => setNewTaskText(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && addNewTask()}
+                    placeholder="اكتب المهمة الجديدة"
+                    aria-label="اسم المهمة الجديدة"
+                    style={{ ...cardStyle, padding: "11px 13px", color: C.text, fontFamily: FONT_STACK, fontSize: 14, outline: "none" }}
+                  />
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <select value={newTaskPeriod} onChange={(e) => setNewTaskPeriod(e.target.value)} aria-label="تكرار المهمة" style={{ flex: 1, minWidth: 0, background: C.inputBg, color: C.text, border: `1px solid ${C.border}`, borderRadius: 12, padding: "10px 12px", fontFamily: FONT_STACK, fontSize: 14 }}>
+                      <option value="daily">يومية</option>
+                      <option value="weekly">أسبوعية</option>
+                      <option value="monthly">شهرية</option>
+                    </select>
+                    <button onClick={addNewTask} style={{ background: C.gradient, border: "none", color: ON_GRADIENT, borderRadius: 12, padding: "10px 16px", fontFamily: FONT_STACK, fontWeight: 800, cursor: "pointer" }}>حفظ</button>
+                    <button onClick={() => { setAddingTask(false); setTaskMsg(null); }} aria-label="إلغاء" style={{ background: "transparent", border: "none", color: C.textMuted, fontSize: 19, cursor: "pointer" }}>✕</button>
+                  </div>
+                  {taskMsg && <p role="alert" style={{ margin: 0, color: FIN.danger, fontSize: 12 }}>{taskMsg}</p>}
+                </div>
+              )}
+            </div>
+
             {/* مؤشر تقدّمك اليوم */}
             {(() => {
               const todayProg = getProgress("daily");
@@ -470,8 +490,22 @@ export default function AmbitionMap() {
                   </div>
 
                   <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                    {dailyTasks.filter((t) => t.period === key).length === 0 && (
+                      <p style={{ margin: 0, color: C.textMuted, fontSize: 13 }}>لا توجد مهام في هذا القسم بعد. أضف مهمة من الأعلى.</p>
+                    )}
                     {dailyTasks.filter((t) => t.period === key).map((task) => {
                       const done = checked[task.id];
+                      if (deleteTaskId === task.id) {
+                        return (
+                          <div key={task.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: `${FIN.danger}14`, border: `1px solid ${FIN.danger}44`, borderRadius: 12, padding: "9px 11px" }}>
+                            <span style={{ color: FIN.danger, fontSize: 13, fontWeight: 700 }}>حذف هذه المهمة؟</span>
+                            <div style={{ display: "flex", gap: 6 }}>
+                              <button onClick={() => { finance.removeTask(task.id); setDeleteTaskId(null); }} style={{ background: FIN.danger, border: "none", color: "#fff", borderRadius: 8, padding: "6px 12px", fontFamily: FONT_STACK, fontWeight: 700, cursor: "pointer" }}>حذف</button>
+                              <button onClick={() => setDeleteTaskId(null)} style={{ background: "transparent", border: `1px solid ${C.border}`, color: C.textSoft, borderRadius: 8, padding: "6px 12px", fontFamily: FONT_STACK, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+                            </div>
+                          </div>
+                        );
+                      }
                       return (
                         <div
                           key={task.id}
@@ -481,6 +515,7 @@ export default function AmbitionMap() {
                           tabIndex={0}
                           onClick={() => toggleCheck(task.id)}
                           onKeyDown={(e) => {
+                            if (e.target !== e.currentTarget) return;
                             if (e.key === "Enter" || e.key === " ") {
                               e.preventDefault();
                               toggleCheck(task.id);
@@ -512,6 +547,7 @@ export default function AmbitionMap() {
                             {done && <span style={{ color: C.onPrimary, fontSize: 13, lineHeight: 1, fontWeight: 800 }}>✓</span>}
                           </div>
                           <p style={{
+                            flex: 1,
                             margin: 0,
                             fontSize: 14,
                             lineHeight: 1.6,
@@ -520,6 +556,13 @@ export default function AmbitionMap() {
                           }}>
                             {task.text}
                           </p>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setDeleteTaskId(task.id); }}
+                            onKeyDown={(e) => e.stopPropagation()}
+                            aria-label={`حذف المهمة: ${task.text}`}
+                            title="حذف المهمة"
+                            style={{ background: "transparent", border: "none", color: C.textMuted, fontSize: 16, cursor: "pointer", padding: 4, lineHeight: 1 }}
+                          >🗑️</button>
                         </div>
                       );
                     })}

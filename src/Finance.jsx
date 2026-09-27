@@ -14,6 +14,8 @@ import {
   balanceStatus,
   loadFinance,
   saveFinance,
+  normalizeTasks,
+  normalizeTaskChecks,
 } from "./finance";
 
 // لون شريط المصروف اليومي حسب النسبة (أخضر < برتقالي > أحمر)
@@ -80,6 +82,8 @@ export function useFinance() {
     monthlyIncome: s.monthlyIncome || FINANCE.monthlyIncome,
     dailyLimit: s.dailyLimit || FINANCE.dailyLimit,
     salaryStepsExpanded: !!s.salaryStepsExpanded,
+    tasks: normalizeTasks(s.tasks),
+    taskChecks: normalizeTaskChecks(s.taskChecks, normalizeTasks(s.tasks)),
     lastReset: s.lastReset || todayKey(),
   });
   const doPush = (stamp) => {
@@ -107,7 +111,15 @@ export function useFinance() {
           if (remoteStamp > localStamp.current) {
             applyingRemote.current = true;
             persistStamp(remoteStamp);
-            setState((prev) => rolloverIfNeeded({ ...prev, ...buildPayload(data) }));
+            setState((prev) => rolloverIfNeeded({
+              ...prev,
+              ...buildPayload(data),
+              // تجاهل بيانات المزامنة القديمة التي لم تتضمن قائمة المهام.
+              tasks: Array.isArray(data?.tasks) ? normalizeTasks(data.tasks, []) : prev.tasks,
+              taskChecks: data?.taskChecks && typeof data.taskChecks === "object" && !Array.isArray(data.taskChecks)
+                ? normalizeTaskChecks(data.taskChecks, Array.isArray(data.tasks) ? normalizeTasks(data.tasks, []) : prev.tasks)
+                : prev.taskChecks,
+            }));
           } else if (localStamp.current > remoteStamp) {
             doPush(localStamp.current); // بياناتنا أحدث (أو المستند غير موجود) → ارفعها
           }
@@ -133,7 +145,7 @@ export function useFinance() {
     if (pushTimer.current) clearTimeout(pushTimer.current);
     pushTimer.current = setTimeout(() => doPush(stamp), 600);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.commitments, state.dailyExpenses, state.emergencyExpenses, state.history, state.monthlyIncome, state.dailyLimit, state.salaryStepsExpanded, state.lastReset]);
+  }, [state.commitments, state.dailyExpenses, state.emergencyExpenses, state.history, state.monthlyIncome, state.dailyLimit, state.salaryStepsExpanded, state.tasks, state.taskChecks, state.lastReset]);
 
   const enableSync = () => {
     const code = genSyncCode();
@@ -208,6 +220,34 @@ export function useFinance() {
       dailyExpenses: s.dailyExpenses.filter((e) => e.ts !== ts),
     }));
 
+  // إدارة مهام خريطة الطموح — تُحفظ محلياً وتدخل ضمن المزامنة السحابية.
+  const addTask = (text, period) => {
+    const cleanText = String(text || "").trim();
+    if (!cleanText || !["daily", "weekly", "monthly"].includes(period)) return false;
+    const id = `task-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    setState((s) => ({
+      ...s,
+      tasks: [...normalizeTasks(s.tasks), { id, text: cleanText, period }],
+    }));
+    return true;
+  };
+  const removeTask = (id) =>
+    setState((s) => {
+      const taskChecks = { ...(s.taskChecks || {}) };
+      delete taskChecks[id];
+      return {
+        ...s,
+        tasks: (s.tasks || []).filter((task) => task.id !== id),
+        taskChecks,
+      };
+    });
+  const toggleTask = (id) =>
+    setState((s) => ({
+      ...s,
+      taskChecks: { ...(s.taskChecks || {}), [id]: !s.taskChecks?.[id] },
+    }));
+  const resetTaskChecks = () => setState((s) => ({ ...s, taskChecks: {} }));
+
   // إدارة الالتزامات — أي تغيير يعيد حساب كل الأرقام فوراً
   const addCommitment = (name, amount) =>
     setState((s) => ({
@@ -247,8 +287,10 @@ export function useFinance() {
   // نسخة احتياطية للتصدير/الاستيراد
   const exportState = () => ({
     _app: "istimrar-finance",
-    _version: 1,
+    _version: 2,
     _exportedAt: new Date().toISOString(),
+    tasks: normalizeTasks(state.tasks),
+    taskChecks: normalizeTaskChecks(state.taskChecks, normalizeTasks(state.tasks)),
     commitments: state.commitments || [],
     dailyExpenses: state.dailyExpenses,
     emergencyExpenses: state.emergencyExpenses,
@@ -260,10 +302,14 @@ export function useFinance() {
   });
   const importState = (obj) => {
     if (!obj || typeof obj !== "object") return false;
-    if (!Array.isArray(obj.dailyExpenses) && !Array.isArray(obj.emergencyExpenses) && !Array.isArray(obj.commitments)) return false;
+    if (!Array.isArray(obj.dailyExpenses) && !Array.isArray(obj.emergencyExpenses) && !Array.isArray(obj.commitments) && !Array.isArray(obj.tasks)) return false;
     setState((s) =>
       rolloverIfNeeded({
         commitments: Array.isArray(obj.commitments) ? obj.commitments : (s.commitments || []),
+        tasks: Array.isArray(obj.tasks) ? normalizeTasks(obj.tasks, []) : normalizeTasks(s.tasks),
+        taskChecks: Array.isArray(obj.tasks)
+          ? normalizeTaskChecks(obj.taskChecks, normalizeTasks(obj.tasks, []))
+          : normalizeTaskChecks(s.taskChecks, normalizeTasks(s.tasks)),
         dailyExpenses: Array.isArray(obj.dailyExpenses) ? obj.dailyExpenses : [],
         emergencyExpenses: Array.isArray(obj.emergencyExpenses) ? obj.emergencyExpenses : [],
         history: Array.isArray(obj.history) ? obj.history : [],
@@ -296,6 +342,12 @@ export function useFinance() {
     salaryStepsExpanded: !!state.salaryStepsExpanded,
     dailyExpenses: state.dailyExpenses,
     emergencyExpenses: state.emergencyExpenses,
+    tasks: normalizeTasks(state.tasks),
+    taskChecks: normalizeTaskChecks(state.taskChecks, normalizeTasks(state.tasks)),
+    addTask,
+    removeTask,
+    toggleTask,
+    resetTaskChecks,
     addDaily,
     resetDaily,
     addEmergency,
