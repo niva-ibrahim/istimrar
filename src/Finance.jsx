@@ -78,6 +78,7 @@ export function useFinance() {
     commitments: s.commitments || [],
     dailyExpenses: s.dailyExpenses || [],
     emergencyExpenses: s.emergencyExpenses || [],
+    loans: Array.isArray(s.loans) ? s.loans : [],
     history: s.history || [],
     monthlyIncome: s.monthlyIncome || FINANCE.monthlyIncome,
     dailyLimit: s.dailyLimit || FINANCE.dailyLimit,
@@ -114,6 +115,8 @@ export function useFinance() {
             setState((prev) => rolloverIfNeeded({
               ...prev,
               ...buildPayload(data),
+              // لا تُصفّر السلف عند استقبال نسخة سحابية قديمة لا تحتوي هذا الحقل.
+              loans: Array.isArray(data?.loans) ? data.loans : (prev.loans || []),
               // تجاهل بيانات المزامنة القديمة التي لم تتضمن قائمة المهام.
               tasks: Array.isArray(data?.tasks) ? normalizeTasks(data.tasks, []) : prev.tasks,
               taskChecks: data?.taskChecks && typeof data.taskChecks === "object" && !Array.isArray(data.taskChecks)
@@ -145,7 +148,7 @@ export function useFinance() {
     if (pushTimer.current) clearTimeout(pushTimer.current);
     pushTimer.current = setTimeout(() => doPush(stamp), 600);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.commitments, state.dailyExpenses, state.emergencyExpenses, state.history, state.monthlyIncome, state.dailyLimit, state.salaryStepsExpanded, state.tasks, state.taskChecks, state.lastReset]);
+  }, [state.commitments, state.dailyExpenses, state.emergencyExpenses, state.loans, state.history, state.monthlyIncome, state.dailyLimit, state.salaryStepsExpanded, state.tasks, state.taskChecks, state.lastReset]);
 
   const enableSync = () => {
     const code = genSyncCode();
@@ -220,6 +223,21 @@ export function useFinance() {
       dailyExpenses: s.dailyExpenses.filter((e) => e.ts !== ts),
     }));
 
+  const addLoan = (name, amount, currency) => {
+    const cleanName = String(name || "").trim();
+    const value = round2(amount);
+    if (!cleanName || !(value > 0) || !["SAR", "YER"].includes(currency)) return false;
+    setState((s) => ({ ...s, loans: [{ id: `loan-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name: cleanName, amount: value, repaid: 0, currency, date: todayKey() }, ...(s.loans || [])] }));
+    return true;
+  };
+  const repayLoan = (id, amount) => {
+    const value = round2(amount);
+    if (!(value > 0)) return false;
+    setState((s) => ({ ...s, loans: (s.loans || []).map((loan) => loan.id === id ? { ...loan, repaid: Math.min(loan.amount, round2((Number(loan.repaid) || 0) + value)) } : loan) }));
+    return true;
+  };
+  const removeLoan = (id) => setState((s) => ({ ...s, loans: (s.loans || []).filter((loan) => loan.id !== id) }));
+
   // إدارة مهام خريطة الطموح — تُحفظ محلياً وتدخل ضمن المزامنة السحابية.
   const addTask = (text, period) => {
     const cleanText = String(text || "").trim();
@@ -292,6 +310,7 @@ export function useFinance() {
     tasks: normalizeTasks(state.tasks),
     taskChecks: normalizeTaskChecks(state.taskChecks, normalizeTasks(state.tasks)),
     commitments: state.commitments || [],
+    loans: state.loans || [],
     dailyExpenses: state.dailyExpenses,
     emergencyExpenses: state.emergencyExpenses,
     history: state.history || [],
@@ -302,10 +321,11 @@ export function useFinance() {
   });
   const importState = (obj) => {
     if (!obj || typeof obj !== "object") return false;
-    if (!Array.isArray(obj.dailyExpenses) && !Array.isArray(obj.emergencyExpenses) && !Array.isArray(obj.commitments) && !Array.isArray(obj.tasks)) return false;
+    if (!Array.isArray(obj.dailyExpenses) && !Array.isArray(obj.emergencyExpenses) && !Array.isArray(obj.commitments) && !Array.isArray(obj.tasks) && !Array.isArray(obj.loans)) return false;
     setState((s) =>
       rolloverIfNeeded({
         commitments: Array.isArray(obj.commitments) ? obj.commitments : (s.commitments || []),
+        loans: Array.isArray(obj.loans) ? obj.loans.filter((loan) => loan && loan.id && loan.name && Number(loan.amount) > 0 && ["SAR", "YER"].includes(loan.currency)).map((loan) => ({ ...loan, amount: round2(loan.amount), repaid: Math.min(round2(loan.amount), Math.max(0, round2(loan.repaid))), currency: loan.currency })) : (s.loans || []),
         tasks: Array.isArray(obj.tasks) ? normalizeTasks(obj.tasks, []) : normalizeTasks(s.tasks),
         taskChecks: Array.isArray(obj.tasks)
           ? normalizeTaskChecks(obj.taskChecks, normalizeTasks(obj.tasks, []))
@@ -338,6 +358,10 @@ export function useFinance() {
     monthlyEmergencyTotal,
     monthlyTotal,
     commitments,
+    loans: state.loans || [],
+    addLoan,
+    repayLoan,
+    removeLoan,
     fixedTotal,
     salaryStepsExpanded: !!state.salaryStepsExpanded,
     dailyExpenses: state.dailyExpenses,
@@ -668,6 +692,7 @@ function SyncSection({ syncCode, syncStatus, enableSync, linkSync, disableSync, 
 export function FinanceSheet({ open, finance, onClose, logo }) {
   const [mounted, setMounted] = useState(open);
   const [shown, setShown] = useState(false);
+  const edgeTouch = useRef(null);
 
   useEffect(() => {
     let raf, t;
@@ -685,7 +710,7 @@ export function FinanceSheet({ open, finance, onClose, logo }) {
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 2000, direction: "rtl", fontFamily: FONT_STACK }}>
       <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.6)", opacity: shown ? 1 : 0, transition: "opacity 300ms ease" }} />
-      <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: "94vh", background: C.bg, borderTopLeftRadius: 28, borderTopRightRadius: 28, border: `1px solid ${C.borderSoft}`, boxShadow: "0 -20px 60px rgba(0,0,0,0.55)", transform: shown ? "translateY(0)" : "translateY(100%)", transition: "transform 300ms cubic-bezier(0.32,0.72,0,1)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div onTouchStart={(event) => { const touch = event.touches[0]; edgeTouch.current = touch.clientX <= 28 ? { x: touch.clientX, y: touch.clientY } : null; }} onTouchEnd={(event) => { if (!edgeTouch.current) return; const touch = event.changedTouches[0]; const dx = touch.clientX - edgeTouch.current.x; const dy = Math.abs(touch.clientY - edgeTouch.current.y); edgeTouch.current = null; if (dx >= 90 && dy <= 70) onClose(); }} style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: "94vh", background: C.bg, borderTopLeftRadius: 28, borderTopRightRadius: 28, border: `1px solid ${C.borderSoft}`, boxShadow: "0 -20px 60px rgba(0,0,0,0.55)", transform: shown ? "translateY(0)" : "translateY(100%)", transition: "transform 300ms cubic-bezier(0.32,0.72,0,1)", display: "flex", flexDirection: "column", overflow: "hidden", touchAction: "pan-y" }}>
         <div style={{ display: "flex", justifyContent: "center", padding: "10px 0 2px", flexShrink: 0 }}>
           <div style={{ width: 44, height: 5, borderRadius: 999, background: C.border }} />
         </div>
@@ -699,7 +724,7 @@ export function FinanceSheet({ open, finance, onClose, logo }) {
 
 // ============ صفحة النظام المالي الكاملة ============
 export function FinancePage({ finance, onBack, logo }) {
-  const { steps, monthlyIncome, setMonthlyIncome, dailyLimit, setDailyLimit, todayExpense, remainingToday, availableBalance, status, monthDays, monthlyDailyTotal, monthlyEmergencyTotal, monthlyTotal, commitments, fixedTotal, dailyExpenses, emergencyExpenses, addDaily, resetDaily, addEmergency, removeEmergency, removeDaily, addCommitment, updateCommitment, removeCommitment, exportState, importState, syncCode, syncStatus, enableSync, linkSync, disableSync } = finance;
+  const { steps, monthlyIncome, setMonthlyIncome, dailyLimit, setDailyLimit, todayExpense, remainingToday, availableBalance, status, monthDays, monthlyDailyTotal, monthlyEmergencyTotal, monthlyTotal, commitments, loans, addLoan, repayLoan, removeLoan, fixedTotal, dailyExpenses, emergencyExpenses, addDaily, resetDaily, addEmergency, removeEmergency, removeDaily, addCommitment, updateCommitment, removeCommitment, exportState, importState, syncCode, syncStatus, enableSync, linkSync, disableSync } = finance;
 
   const todayLabel = (() => {
     try {
@@ -714,6 +739,10 @@ export function FinancePage({ finance, onBack, logo }) {
   const [emDesc, setEmDesc] = useState("");
   const [dailyMsg, setDailyMsg] = useState(null);
   const [emMsg, setEmMsg] = useState(null);
+  const [loanName, setLoanName] = useState("");
+  const [loanAmount, setLoanAmount] = useState("");
+  const [loanCurrency, setLoanCurrency] = useState("SAR");
+  const [repaymentInputs, setRepaymentInputs] = useState({});
   const [backupMsg, setBackupMsg] = useState(null);
   const [toast, setToast] = useState(null);
   const toastTimer = useRef(null);
@@ -723,7 +752,7 @@ export function FinancePage({ finance, onBack, logo }) {
   // حالة طيّ/فتح كل قسم (محفوظة بين الجلسات)
   const OPEN_KEY = "istimrar_fin_open";
   const [openMap, setOpenMap] = useState(() => {
-    const defaults = { steps: false, daily: true, monthly: false, commitments: true, emergency: true, sync: false, backup: false };
+    const defaults = { steps: false, daily: true, monthly: false, commitments: true, loans: true, emergency: true, sync: false, backup: false };
     try { return { ...defaults, ...(JSON.parse(localStorage.getItem(OPEN_KEY) || "{}")) }; }
     catch { return defaults; }
   });
@@ -1031,6 +1060,37 @@ export function FinancePage({ finance, onBack, logo }) {
           updateCommitment={updateCommitment}
           removeCommitment={removeCommitment}
         />
+      </Section>
+
+      {/* القسم: المبالغ التي أقرضتها للآخرين */}
+      <Section title="🤝 مبالغ أقرضتها للآخرين" open={!!openMap.loans} onToggle={() => toggleSection("loans")}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <p style={{ margin: 0, fontSize: 13, color: C.textMuted, lineHeight: 1.7 }}>سجّل المبالغ التي أقرضتها وتابع المتبقي بعد كل سداد. يظهر الإجمالي لكل عملة بشكل مستقل.</p>
+          {(["SAR", "YER"]).map((currency) => {
+            const total = (loans || []).filter((loan) => loan.currency === currency).reduce((sum, loan) => sum + Math.max(0, loan.amount - (loan.repaid || 0)), 0);
+            return <div key={currency} style={{ display: "flex", justifyContent: "space-between", padding: "10px 12px", borderRadius: 12, background: C.overlay1, color: C.textSoft, fontSize: 13 }}><span>المتبقي بالـ{currency === "SAR" ? "ريال السعودي" : "ريال اليمني"}</span><b style={{ color: C.primary }}>{fmt(total)} {currency === "SAR" ? "ر.س" : "ر.ي"}</b></div>;
+          })}
+          <div style={{ display: "flex", flexDirection: "column", gap: 9, padding: 12, borderRadius: 14, border: `1px solid ${C.borderSoft}` }}>
+            <input value={loanName} onChange={(e) => setLoanName(e.target.value)} placeholder="اسم الشخص" aria-label="اسم الشخص" style={inputStyle} />
+            <div style={{ display: "flex", gap: 8 }}>
+              <input value={loanAmount} onChange={(e) => setLoanAmount(e.target.value)} inputMode="decimal" placeholder="المبلغ" aria-label="مبلغ السلفة" style={{ ...inputStyle, flex: 1, minWidth: 0 }} />
+              <select value={loanCurrency} onChange={(e) => setLoanCurrency(e.target.value)} aria-label="عملة السلفة" style={{ ...inputStyle, width: 112, flexShrink: 0 }}><option value="SAR">ريال سعودي</option><option value="YER">ريال يمني</option></select>
+            </div>
+            <PrimaryButton onClick={() => { const ok = addLoan(loanName, parseNum(loanAmount), loanCurrency); if (!ok) { showToast("أدخل اسم الشخص ومبلغاً صحيحاً"); return; } setLoanName(""); setLoanAmount(""); showToast("تم تسجيل المبلغ ✓"); }}>+ تسجيل مبلغ</PrimaryButton>
+          </div>
+          {(loans || []).length === 0 ? <p style={{ margin: 0, textAlign: "center", fontSize: 13, color: C.textMuted }}>لا توجد مبالغ مسجلة حتى الآن.</p> : (loans || []).map((loan) => {
+            const outstanding = Math.max(0, loan.amount - (loan.repaid || 0));
+            const symbol = loan.currency === "YER" ? "ر.ي" : "ر.س";
+            return <div key={loan.id} style={{ display: "flex", flexDirection: "column", gap: 9, padding: 12, borderRadius: 14, background: C.overlay1, border: `1px solid ${C.borderSoft}` }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                <div style={{ minWidth: 0 }}><b style={{ display: "block", color: C.text, fontSize: 14 }}>{loan.name}</b><span style={{ color: C.textMuted, fontSize: 11 }}>{loan.date || ""} · أصل المبلغ {fmt(loan.amount)} {symbol}</span></div>
+                <button onClick={() => removeLoan(loan.id)} aria-label={`حذف سجل ${loan.name}`} title="حذف السجل" style={{ background: "transparent", border: "none", color: C.textMuted, cursor: "pointer", fontSize: 17 }}>✕</button>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: C.textSoft }}><span>تم سداده: {fmt(loan.repaid || 0)} {symbol}</span><b style={{ color: outstanding ? FIN.warning : FIN.success }}>المتبقي: {fmt(outstanding)} {symbol}</b></div>
+              {outstanding > 0 && <div style={{ display: "flex", gap: 8 }}><input value={repaymentInputs[loan.id] || ""} onChange={(e) => setRepaymentInputs((prev) => ({ ...prev, [loan.id]: e.target.value }))} inputMode="decimal" placeholder="مبلغ السداد" aria-label={`مبلغ السداد من ${loan.name}`} style={{ ...inputStyle, flex: 1, minWidth: 0 }} /><button onClick={() => { const value = parseNum(repaymentInputs[loan.id]); if (!(value > 0)) { showToast("أدخل مبلغ سداد صحيحاً"); return; } repayLoan(loan.id, value); setRepaymentInputs((prev) => ({ ...prev, [loan.id]: "" })); showToast("تم تحديث المبلغ المتبقي ✓"); }} style={{ background: C.tint, border: `1px solid ${C.hairline}`, color: C.primary, borderRadius: 12, padding: "9px 12px", fontFamily: FONT_STACK, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>تسجيل سداد</button></div>}
+            </div>;
+          })}
+        </div>
       </Section>
 
       {/* القسم E: المصروفات الطارئة */}
