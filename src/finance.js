@@ -155,6 +155,7 @@ export function loadFinance() {
   if (!data || typeof data !== "object") data = {};
   data.dailyExpenses = data.dailyExpenses || [];
   data.emergencyExpenses = data.emergencyExpenses || [];
+  data.loans = Array.isArray(data.loans) ? data.loans.filter((loan) => loan && loan.id && loan.name && Number(loan.amount) > 0 && ["SAR", "YER"].includes(loan.currency)).map((loan) => ({ ...loan, amount: round2(loan.amount), repaid: Math.min(round2(loan.amount), Math.max(0, round2(loan.repaid))), currency: loan.currency })) : [];
   data.history = data.history || [];
   // نبذر الالتزامات الافتراضية فقط إن لم تُضبط من قبل (لا نعيد بذرها لو أفرغها المستخدم)
   data.commitments = Array.isArray(data.commitments) ? data.commitments : DEFAULT_COMMITMENTS;
