@@ -53,6 +53,40 @@ export function normalizeTaskChecks(checks, tasks) {
   }, {});
 }
 
+// سجل السلف مجمّع حسب الشخص، وكل مبلغ أو سداد عملية مستقلة بتاريخها.
+// يحوّل هذا أيضاً السجلات القديمة المسطحة إلى الشكل الجديد عند أول تحميل.
+export function normalizeLoans(records) {
+  if (!Array.isArray(records)) return [];
+  const people = new Map();
+  records.forEach((record, index) => {
+    const name = String(record?.name || "").trim();
+    if (!name) return;
+    const key = name.toLocaleLowerCase();
+    let person = people.get(key);
+    if (!person) {
+      person = { id: String(record.id || `borrower-${index}-${Date.now().toString(36)}`), name, transactions: [] };
+      people.set(key, person);
+    }
+    const rows = Array.isArray(record.transactions)
+      ? record.transactions
+      : (Number(record.amount) > 0 ? [{ id: `${record.id || index}-lent`, type: "lent", amount: record.amount, currency: record.currency, date: record.date }, ...(Number(record.repaid) > 0 ? [{ id: `${record.id || index}-repaid`, type: "repaid", amount: record.repaid, currency: record.currency, date: record.date }] : [])] : []);
+    rows.forEach((transaction, txIndex) => {
+      const amount = round2(transaction?.amount);
+      const currency = transaction?.currency || record.currency || "SAR";
+      const type = transaction?.type === "repaid" ? "repaid" : transaction?.type === "lent" ? "lent" : "";
+      if (!(amount > 0) || !["SAR", "YER"].includes(currency) || !type) return;
+      person.transactions.push({
+        id: String(transaction.id || `${record.id || index}-tx-${txIndex}`),
+        type,
+        amount,
+        currency,
+        date: /^\d{4}-\d{2}-\d{2}$/.test(String(transaction.date || "")) ? transaction.date : (record.date || todayKey()),
+      });
+    });
+  });
+  return [...people.values()].filter((person) => person.transactions.length > 0);
+}
+
 // الالتزامات الشهرية الافتراضية — مصفوفة ديناميكية قابلة للإضافة/التعديل/الحذف.
 // (تُخزَّن في localStorage بعد أول تحميل، وتصبح مصدر الحساب.)
 export const DEFAULT_COMMITMENTS = [
@@ -155,7 +189,7 @@ export function loadFinance() {
   if (!data || typeof data !== "object") data = {};
   data.dailyExpenses = data.dailyExpenses || [];
   data.emergencyExpenses = data.emergencyExpenses || [];
-  data.loans = Array.isArray(data.loans) ? data.loans.filter((loan) => loan && loan.id && loan.name && Number(loan.amount) > 0 && ["SAR", "YER"].includes(loan.currency)).map((loan) => ({ ...loan, amount: round2(loan.amount), repaid: Math.min(round2(loan.amount), Math.max(0, round2(loan.repaid))), currency: loan.currency })) : [];
+  data.loans = normalizeLoans(data.loans);
   data.history = data.history || [];
   // نبذر الالتزامات الافتراضية فقط إن لم تُضبط من قبل (لا نعيد بذرها لو أفرغها المستخدم)
   data.commitments = Array.isArray(data.commitments) ? data.commitments : DEFAULT_COMMITMENTS;
