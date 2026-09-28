@@ -24,58 +24,6 @@ const FONT_STYLE = `
   }
 `;
 
-// لون شارة الدور حسب نوعه
-const TYPE_ACCENT = {
-  "أساسي": { color: "#31E6D7", tint: "rgba(49,230,215,0.10)" },
-  "اختياري": { color: "#1E7FA8", tint: "rgba(30,127,168,0.16)" },
-  "مساند": { color: "#24B5C0", tint: "rgba(36,181,192,0.14)" },
-};
-
-const roles = [
-  {
-    name: "المسلم المُلتزم",
-    type: "أساسي",
-    mpl: "أصلي كل فرض في وقته، وأراجع حفظي للقرآن ١٥ دقيقة يومياً",
-    goal: "أحفظ جزءين جديدين وأُلقي محاضرة توعوية واحدة على الأقل",
-  },
-  {
-    name: "متعلّم الإنجليزي",
-    type: "أساسي",
-    mpl: "أتعلّم الإنجليزي ٣٠ دقيقة يومياً",
-    goal: "أصل لمستوى محادثة بطلاقة",
-  },
-  {
-    name: "الابن البار",
-    type: "أساسي",
-    mpl: "أزور والديّ أو أتصل بهم ٣ مرات أسبوعياً على الأقل",
-    goal: "أُخصص مبلغاً ثابتاً شهرياً لوالديّ من دخلي",
-  },
-  {
-    name: "مدير تأسيس وتشغيل",
-    type: "أساسي",
-    mpl: "أُنجز مهامي اليومية وأراجع مؤشرات العلامة التجارية كل أسبوع",
-    goal: "أُطلق العلامة التجارية رسمياً وأحقق أول ١٠٠ عميل فعلي",
-  },
-  {
-    name: "رائد الأعمال الرقمي",
-    type: "اختياري",
-    mpl: "أُطبّق درساً واحداً من كورساتي أسبوعياً على مشروع حقيقي",
-    goal: "أُطلق أول مشروع تجارة إلكترونية مستقل وأحقق أول بيعة",
-  },
-  {
-    name: "المتعلم المستمر",
-    type: "اختياري",
-    mpl: "أُكمل ٣٠ دقيقة تعلم يومياً في التسويق الرقمي أو الإدارة",
-    goal: "أُنهي كورسين كاملين وأحصل على شهادة معتمدة في مجاله",
-  },
-  {
-    name: "المُعطي والمُتصدّق",
-    type: "مساند",
-    mpl: "أُخصص نسبة ثابتة من دخلي للصدقة والمساعدة شهرياً",
-    goal: "أُساعد ٥ أشخاص محتاجين بشكل مباشر خلال ٢٠٢٦",
-  },
-];
-
 function getArabicDate() {
   const now = new Date();
   return now.toLocaleDateString("ar-SA-u-ca-islamic", {
@@ -167,7 +115,7 @@ export default function AmbitionMap() {
     return { done, total: items.length, pct: items.length ? Math.round((done / items.length) * 100) : 0 };
   };
 
-  const tabs = ["الحلم الجريء", "أدواري", "قائمتي اليومية"];
+  const tabs = ["الحلم الجريء", "قائمتي اليومية"];
 
   return (
     <div style={{ fontFamily: FONT_STACK, background: C.bg, minHeight: "100vh", direction: "rtl", color: C.text }}>
@@ -358,37 +306,8 @@ export default function AmbitionMap() {
           </div>
         )}
 
-        {/* TAB 2 — الأدوار */}
+        {/* TAB 2 — القائمة اليومية */}
         {activeTab === 1 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            {roles.map((role, i) => {
-              const accent = TYPE_ACCENT[role.type] || TYPE_ACCENT["أساسي"];
-              return (
-                <div key={i} style={cardStyle}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-                    <p style={{ margin: 0, fontSize: 16, fontWeight: 700, color: C.text }}>{role.name}</p>
-                    <span style={{ background: accent.tint, color: accent.color, borderRadius: 999, padding: "3px 12px", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap", marginRight: 8, border: `1px solid ${accent.color}33` }}>
-                      {role.type}
-                    </span>
-                  </div>
-
-                  <div style={{ marginBottom: 12 }}>
-                    <p style={{ margin: "0 0 4px", fontSize: 11, color: C.textMuted, fontWeight: 600 }}>الحد الأدنى للأداء</p>
-                    <p style={{ margin: 0, fontSize: 13, lineHeight: 1.8, color: C.textSoft }}>{role.mpl}</p>
-                  </div>
-
-                  <div style={{ background: accent.tint, borderRadius: 16, padding: "12px 14px", border: `1px solid ${C.borderSoft}` }}>
-                    <p style={{ margin: "0 0 4px", fontSize: 11, color: accent.color, fontWeight: 700 }}>هدف ٢٠٢٦</p>
-                    <p style={{ margin: 0, fontSize: 13, lineHeight: 1.8, color: C.text }}>{role.goal}</p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* TAB 3 — القائمة اليومية */}
-        {activeTab === 2 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
             {/* Date */}
