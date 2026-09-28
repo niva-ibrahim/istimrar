@@ -16,6 +16,7 @@ import {
   saveFinance,
   normalizeTasks,
   normalizeTaskChecks,
+  normalizeLoans,
 } from "./finance";
 
 // لون شريط المصروف اليومي حسب النسبة (أخضر < برتقالي > أحمر)
@@ -78,7 +79,7 @@ export function useFinance() {
     commitments: s.commitments || [],
     dailyExpenses: s.dailyExpenses || [],
     emergencyExpenses: s.emergencyExpenses || [],
-    loans: Array.isArray(s.loans) ? s.loans : [],
+    loans: normalizeLoans(s.loans),
     history: s.history || [],
     monthlyIncome: s.monthlyIncome || FINANCE.monthlyIncome,
     dailyLimit: s.dailyLimit || FINANCE.dailyLimit,
@@ -116,7 +117,7 @@ export function useFinance() {
               ...prev,
               ...buildPayload(data),
               // لا تُصفّر السلف عند استقبال نسخة سحابية قديمة لا تحتوي هذا الحقل.
-              loans: Array.isArray(data?.loans) ? data.loans : (prev.loans || []),
+              loans: Array.isArray(data?.loans) ? normalizeLoans(data.loans) : (prev.loans || []),
               // تجاهل بيانات المزامنة القديمة التي لم تتضمن قائمة المهام.
               tasks: Array.isArray(data?.tasks) ? normalizeTasks(data.tasks, []) : prev.tasks,
               taskChecks: data?.taskChecks && typeof data.taskChecks === "object" && !Array.isArray(data.taskChecks)
@@ -227,16 +228,28 @@ export function useFinance() {
     const cleanName = String(name || "").trim();
     const value = round2(amount);
     if (!cleanName || !(value > 0) || !["SAR", "YER"].includes(currency)) return false;
-    setState((s) => ({ ...s, loans: [{ id: `loan-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name: cleanName, amount: value, repaid: 0, currency, date: todayKey() }, ...(s.loans || [])] }));
+    setState((s) => {
+      const loans = normalizeLoans(s.loans);
+      const existing = loans.find((person) => person.name.toLocaleLowerCase() === cleanName.toLocaleLowerCase());
+      const transaction = { id: `loan-tx-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, type: "lent", amount: value, currency, date: todayKey() };
+      return { ...s, loans: existing
+        ? loans.map((person) => person.id === existing.id ? { ...person, transactions: [...person.transactions, transaction] } : person)
+        : [{ id: `borrower-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name: cleanName, transactions: [transaction] }, ...loans] };
+    });
     return true;
   };
-  const repayLoan = (id, amount) => {
+  const repayLoan = (id, amount, currency) => {
     const value = round2(amount);
     if (!(value > 0)) return false;
-    setState((s) => ({ ...s, loans: (s.loans || []).map((loan) => loan.id === id ? { ...loan, repaid: Math.min(loan.amount, round2((Number(loan.repaid) || 0) + value)) } : loan) }));
+    const person = normalizeLoans(stateRef.current.loans).find((item) => item.id === id);
+    const outstanding = person?.transactions.filter((tx) => tx.currency === currency).reduce((sum, tx) => sum + (tx.type === "lent" ? tx.amount : -tx.amount), 0) || 0;
+    if (!(outstanding > 0) || value > round2(outstanding)) return false;
+    setState((s) => ({ ...s, loans: normalizeLoans(s.loans).map((item) => item.id === id
+      ? { ...item, transactions: [...item.transactions, { id: `repay-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, type: "repaid", amount: value, currency, date: todayKey() }] }
+      : item) }));
     return true;
   };
-  const removeLoan = (id) => setState((s) => ({ ...s, loans: (s.loans || []).filter((loan) => loan.id !== id) }));
+  const removeLoan = (id) => setState((s) => ({ ...s, loans: normalizeLoans(s.loans).filter((person) => person.id !== id) }));
 
   // إدارة مهام خريطة الطموح — تُحفظ محلياً وتدخل ضمن المزامنة السحابية.
   const addTask = (text, period) => {
@@ -325,7 +338,7 @@ export function useFinance() {
     setState((s) =>
       rolloverIfNeeded({
         commitments: Array.isArray(obj.commitments) ? obj.commitments : (s.commitments || []),
-        loans: Array.isArray(obj.loans) ? obj.loans.filter((loan) => loan && loan.id && loan.name && Number(loan.amount) > 0 && ["SAR", "YER"].includes(loan.currency)).map((loan) => ({ ...loan, amount: round2(loan.amount), repaid: Math.min(round2(loan.amount), Math.max(0, round2(loan.repaid))), currency: loan.currency })) : (s.loans || []),
+        loans: Array.isArray(obj.loans) ? normalizeLoans(obj.loans) : (s.loans || []),
         tasks: Array.isArray(obj.tasks) ? normalizeTasks(obj.tasks, []) : normalizeTasks(s.tasks),
         taskChecks: Array.isArray(obj.tasks)
           ? normalizeTaskChecks(obj.taskChecks, normalizeTasks(obj.tasks, []))
@@ -1065,29 +1078,44 @@ export function FinancePage({ finance, onBack, logo }) {
       {/* القسم: المبالغ التي أقرضتها للآخرين */}
       <Section title="🤝 مبالغ أقرضتها للآخرين" open={!!openMap.loans} onToggle={() => toggleSection("loans")}>
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <p style={{ margin: 0, fontSize: 13, color: C.textMuted, lineHeight: 1.7 }}>سجّل المبالغ التي أقرضتها وتابع المتبقي بعد كل سداد. يظهر الإجمالي لكل عملة بشكل مستقل.</p>
+          <p style={{ margin: 0, fontSize: 13, color: C.textMuted, lineHeight: 1.7 }}>كل شخص له سجل واحد. أضف له عمليات سلف جديدة في أي وقت، وسجّل السداد كعملية مستقلة؛ لكل عملية تاريخها ومبلغها.</p>
           {(["SAR", "YER"]).map((currency) => {
-            const total = (loans || []).filter((loan) => loan.currency === currency).reduce((sum, loan) => sum + Math.max(0, loan.amount - (loan.repaid || 0)), 0);
-            return <div key={currency} style={{ display: "flex", justifyContent: "space-between", padding: "10px 12px", borderRadius: 12, background: C.overlay1, color: C.textSoft, fontSize: 13 }}><span>المتبقي بالـ{currency === "SAR" ? "ريال السعودي" : "ريال اليمني"}</span><b style={{ color: C.primary }}>{fmt(total)} {currency === "SAR" ? "ر.س" : "ر.ي"}</b></div>;
+            const total = (loans || []).reduce((sum, person) => sum + person.transactions.filter((tx) => tx.currency === currency).reduce((balance, tx) => balance + (tx.type === "lent" ? tx.amount : -tx.amount), 0), 0);
+            return <div key={currency} style={{ display: "flex", justifyContent: "space-between", padding: "10px 12px", borderRadius: 12, background: C.overlay1, color: C.textSoft, fontSize: 13 }}><span>إجمالي المستحق · {currency === "SAR" ? "السعودي" : "اليمني"}</span><b style={{ color: C.primary }}>{fmt(Math.max(0, total))} {currency === "SAR" ? "ر.س" : "ر.ي"}</b></div>;
           })}
           <div style={{ display: "flex", flexDirection: "column", gap: 9, padding: 12, borderRadius: 14, border: `1px solid ${C.borderSoft}` }}>
-            <input value={loanName} onChange={(e) => setLoanName(e.target.value)} placeholder="اسم الشخص" aria-label="اسم الشخص" style={inputStyle} />
+            <label style={{ fontSize: 12, color: C.textMuted, fontWeight: 700 }}>إضافة مبلغ مستلف جديد</label>
+            <input list="borrower-options" value={loanName} onChange={(e) => setLoanName(e.target.value)} placeholder="اسم الشخص أو اختره من القائمة" aria-label="اسم الشخص" style={inputStyle} />
+            <datalist id="borrower-options">{(loans || []).map((person) => <option key={person.id} value={person.name} />)}</datalist>
             <div style={{ display: "flex", gap: 8 }}>
               <input value={loanAmount} onChange={(e) => setLoanAmount(e.target.value)} inputMode="decimal" placeholder="المبلغ" aria-label="مبلغ السلفة" style={{ ...inputStyle, flex: 1, minWidth: 0 }} />
               <select value={loanCurrency} onChange={(e) => setLoanCurrency(e.target.value)} aria-label="عملة السلفة" style={{ ...inputStyle, width: 112, flexShrink: 0 }}><option value="SAR">ريال سعودي</option><option value="YER">ريال يمني</option></select>
             </div>
-            <PrimaryButton onClick={() => { const ok = addLoan(loanName, parseNum(loanAmount), loanCurrency); if (!ok) { showToast("أدخل اسم الشخص ومبلغاً صحيحاً"); return; } setLoanName(""); setLoanAmount(""); showToast("تم تسجيل المبلغ ✓"); }}>+ تسجيل مبلغ</PrimaryButton>
+            <PrimaryButton onClick={() => { const ok = addLoan(loanName, parseNum(loanAmount), loanCurrency); if (!ok) { showToast("أدخل اسم الشخص ومبلغاً صحيحاً"); return; } setLoanName(""); setLoanAmount(""); showToast("أُضيفت العملية بتاريخ اليوم ✓"); }}>+ إضافة العملية للشخص</PrimaryButton>
           </div>
-          {(loans || []).length === 0 ? <p style={{ margin: 0, textAlign: "center", fontSize: 13, color: C.textMuted }}>لا توجد مبالغ مسجلة حتى الآن.</p> : (loans || []).map((loan) => {
-            const outstanding = Math.max(0, loan.amount - (loan.repaid || 0));
-            const symbol = loan.currency === "YER" ? "ر.ي" : "ر.س";
-            return <div key={loan.id} style={{ display: "flex", flexDirection: "column", gap: 9, padding: 12, borderRadius: 14, background: C.overlay1, border: `1px solid ${C.borderSoft}` }}>
+          {(loans || []).length === 0 ? <p style={{ margin: 0, textAlign: "center", fontSize: 13, color: C.textMuted }}>لا توجد مبالغ مسجلة حتى الآن.</p> : (loans || []).map((person) => {
+            const balanceFor = (currency) => person.transactions.filter((tx) => tx.currency === currency).reduce((sum, tx) => sum + (tx.type === "lent" ? tx.amount : -tx.amount), 0);
+            return <div key={person.id} style={{ display: "flex", flexDirection: "column", gap: 10, padding: 13, borderRadius: 15, background: C.overlay1, border: `1px solid ${C.borderSoft}` }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                <div style={{ minWidth: 0 }}><b style={{ display: "block", color: C.text, fontSize: 14 }}>{loan.name}</b><span style={{ color: C.textMuted, fontSize: 11 }}>{loan.date || ""} · أصل المبلغ {fmt(loan.amount)} {symbol}</span></div>
-                <button onClick={() => removeLoan(loan.id)} aria-label={`حذف سجل ${loan.name}`} title="حذف السجل" style={{ background: "transparent", border: "none", color: C.textMuted, cursor: "pointer", fontSize: 17 }}>✕</button>
+                <div style={{ minWidth: 0 }}><b style={{ display: "block", color: C.text, fontSize: 15 }}>{person.name}</b><span style={{ color: C.textMuted, fontSize: 11 }}>{person.transactions.length} عملية مسجلة</span></div>
+                <button onClick={() => { if (window.confirm(`حذف سجل ${person.name} وجميع عملياته؟`)) removeLoan(person.id); }} aria-label={`حذف سجل ${person.name}`} title="حذف السجل" style={{ background: "transparent", border: "none", color: C.textMuted, cursor: "pointer", fontSize: 17 }}>🗑️</button>
               </div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: C.textSoft }}><span>تم سداده: {fmt(loan.repaid || 0)} {symbol}</span><b style={{ color: outstanding ? FIN.warning : FIN.success }}>المتبقي: {fmt(outstanding)} {symbol}</b></div>
-              {outstanding > 0 && <div style={{ display: "flex", gap: 8 }}><input value={repaymentInputs[loan.id] || ""} onChange={(e) => setRepaymentInputs((prev) => ({ ...prev, [loan.id]: e.target.value }))} inputMode="decimal" placeholder="مبلغ السداد" aria-label={`مبلغ السداد من ${loan.name}`} style={{ ...inputStyle, flex: 1, minWidth: 0 }} /><button onClick={() => { const value = parseNum(repaymentInputs[loan.id]); if (!(value > 0)) { showToast("أدخل مبلغ سداد صحيحاً"); return; } repayLoan(loan.id, value); setRepaymentInputs((prev) => ({ ...prev, [loan.id]: "" })); showToast("تم تحديث المبلغ المتبقي ✓"); }} style={{ background: C.tint, border: `1px solid ${C.hairline}`, color: C.primary, borderRadius: 12, padding: "9px 12px", fontFamily: FONT_STACK, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>تسجيل سداد</button></div>}
+              {(["SAR", "YER"]).map((currency) => {
+                const balance = balanceFor(currency);
+                if (balance <= 0 && !person.transactions.some((tx) => tx.currency === currency)) return null;
+                const symbol = currency === "YER" ? "ر.ي" : "ر.س";
+                const inputKey = `${person.id}:${currency}`;
+                return <div key={currency} style={{ display: "flex", flexDirection: "column", gap: 7, padding: 10, borderRadius: 12, border: `1px solid ${C.borderSoft}` }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: C.textSoft }}><span>المستحق {currency === "SAR" ? "السعودي" : "اليمني"}</span><b style={{ color: balance > 0 ? FIN.warning : FIN.success }}>{fmt(Math.max(0, balance))} {symbol}</b></div>
+                  {balance > 0 && <div style={{ display: "flex", gap: 7 }}><input value={repaymentInputs[inputKey] || ""} onChange={(e) => setRepaymentInputs((prev) => ({ ...prev, [inputKey]: e.target.value }))} inputMode="decimal" placeholder="مبلغ السداد" aria-label={`مبلغ السداد من ${person.name}`} style={{ ...inputStyle, flex: 1, minWidth: 0 }} /><button onClick={() => { const value = parseNum(repaymentInputs[inputKey]); if (!(value > 0)) { showToast("أدخل مبلغ سداد صحيحاً"); return; } if (!repayLoan(person.id, value, currency)) { showToast("مبلغ السداد أكبر من المستحق"); return; } setRepaymentInputs((prev) => ({ ...prev, [inputKey]: "" })); showToast("أُضيفت عملية السداد بتاريخ اليوم ✓"); }} style={{ background: C.tint, border: `1px solid ${C.hairline}`, color: C.primary, borderRadius: 12, padding: "8px 10px", fontFamily: FONT_STACK, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>تسجيل سداد</button></div>}
+                </div>;
+              })}
+              <details>
+                <summary style={{ color: C.primary, fontSize: 12, cursor: "pointer", fontWeight: 700 }}>عرض سجل العمليات وتواريخها</summary>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 9 }}>
+                  {person.transactions.slice().sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)).map((tx) => <div key={tx.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12, color: C.textSoft, padding: "6px 0", borderBottom: `1px solid ${C.borderSoft}` }}><span>{tx.date} · {tx.type === "lent" ? "سلفة" : "سداد"}</span><b style={{ color: tx.type === "lent" ? FIN.warning : FIN.success }}>{tx.type === "lent" ? "+" : "−"}{fmt(tx.amount)} {tx.currency === "YER" ? "ر.ي" : "ر.س"}</b></div>)}
+                </div>
+              </details>
             </div>;
           })}
         </div>
